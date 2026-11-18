@@ -3,6 +3,7 @@
 import { validateJazzContext, validateJazzResult, validateJazzProgression } from './jazz-name-contract.mjs?v=2';
 import { DJ_GENRES, djGenreChart } from './jazz-genres.mjs';
 import { validateJazzArrangement } from './jazz-radio-contract.mjs';
+import { BEATMAP_RATE, validateBandBeatmap } from './beatmap/band-beatmap.mjs';
 const DJ_NOTES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 const DJ_CHORDS = {
   maj9: [0, 4, 7, 11, 14], m9: [0, 3, 7, 10, 14], '13': [0, 4, 7, 10, 14, 21],
@@ -425,8 +426,15 @@ class DJRenderer {
     this.pendingPart = null; this.activePart = null;
     this.pendingScene = null;
     this.pendingBank = null;
+    this.pendingBeatmap = undefined;
+    this.beatmap = null;
+    this.beatmapBar = 0;
   }
   configure(data) {
+    if (Object.hasOwn(data, 'beatmap')) {
+      try { this.pendingBeatmap = data.beatmap === null ? null : validateBandBeatmap(data.beatmap); }
+      catch { this.notify({ beatmapError: 'This beatMAP could not be played.' }); }
+    }
     if (data.bank) {
       const bank = data.bank;
       if (Number.isInteger(bank.rate) && bank.rate >= 8000 && bank.rate <= 96000
@@ -471,7 +479,10 @@ class DJRenderer {
   trigger(e) {
     let data, speed = this.bank.rate / this.rate;
     const pitched = e.instrument === 'piano' || e.instrument === 'bass';
-    if (pitched) {
+    if (e.sample) {
+      data = e.sample;
+      speed = BEATMAP_RATE / this.rate;
+    } else if (pitched) {
       const samples = this.bank[e.instrument];
       const sample = samples.reduce((a, b) => Math.abs(b.note - e.note) < Math.abs(a.note - e.note) ? b : a);
       data = sample.data; speed *= Math.pow(2, (e.note - sample.note) / 12);
@@ -489,6 +500,12 @@ class DJRenderer {
     for (let i = 0; i < left.length; i++, this.frame++) {
       if (this.frame >= this.nextBar) {
         if (this.pendingBank) { this.bank = this.pendingBank; this.pendingBank = null; }
+        if (this.pendingBeatmap !== undefined) {
+          this.beatmap = this.pendingBeatmap;
+          this.pendingBeatmap = undefined;
+          this.beatmapBar = 0;
+          if (this.beatmap) this.notify({ beatmapApplied: this.beatmap.name });
+        }
         if (this.pendingScene) {
           this.targets = { ...this.targets, ...this.pendingScene.levels };
           this.notify({ sceneApplied: this.pendingScene.id }); this.pendingScene = null;
@@ -498,11 +515,31 @@ class DJRenderer {
         if (this.activePart && (!matches(this.activePart) || this.info?.beatPattern !== bar.info.beatPattern)) this.activePart = null;
         if (this.pendingPart) {
           const part = this.pendingPart; this.pendingPart = null;
-          if (matches(part)) { this.activePart = part; this.notify({ partApplied: part.requestId, set: bar.info.set }); }
+          if (matches(part)) {
+            this.beatmap = null;
+            this.activePart = part;
+            this.notify({ partApplied: part.requestId, set: bar.info.set });
+          }
           else this.notify({ partRejected: part.requestId, reason: 'SET_CHANGED' });
         }
         const playedPart = this.activePart?.result || this.composer.favorite?.part;
-        if (playedPart) {
+        if (this.beatmap) {
+          const map = this.beatmap;
+          const measure = map.order[this.beatmapBar];
+          bar.events = bar.events.filter(event => event.role !== 'drums');
+          for (const hit of map.bars[measure]) bar.events.push({
+            sample: map.samples[hit.sample], instrument: 'beatmap', role: 'drums',
+            time: hit.at * bar.duration, duration: 0, velocity: hit.level
+          });
+          bar.events.sort((a, b) => a.time - b.time);
+          bar.info.beatmapName = map.name;
+          bar.info.beatmapMeasure = measure + 1;
+          this.beatmapBar++;
+          if (this.beatmapBar === map.order.length) {
+            if (map.loop) this.beatmapBar = 0;
+            else this.beatmap = null;
+          }
+        } else if (playedPart) {
           const seconds = 60 / bar.info.tempo, swing = bar.info.swing;
           bar.events = bar.events.filter(e => e.role !== 'drums');
           for (const hit of playedPart.pattern) {

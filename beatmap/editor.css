@@ -1,0 +1,108 @@
+:root {
+  color-scheme: dark;
+  --panel: #222b24;
+  --inner: #18211c;
+  --text: #f1ecd9;
+  --muted: #b7c0ad;
+  --line: #455346;
+  --green: #c4e69a;
+  --orange: #f4b57d;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+  font: 14px/1.45 system-ui, sans-serif;
+  background: #161f1a;
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { margin: auto; max-width: 1360px; padding: 12px 24px 28px; }
+.rhythm-section.rhythm-section { margin: 0; min-width: 0; }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; }
+button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: #2a372b;
+}
+button.primary { background: var(--green); color: #1c291a; border-color: var(--green); font-weight: 650; }
+button:hover:not(:disabled) { filter: brightness(1.14); }
+button:disabled { opacity: .5; cursor: default; }
+button[aria-pressed="true"] { border-color: var(--green); }
+:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+input[type=range], input[type=checkbox] { accent-color: var(--green); }
+a { color: var(--green); }
+.eyebrow, .mono { font-family: var(--mono); }
+.eyebrow { color: var(--green); font-size: 10px; letter-spacing: .12em; }
+label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+summary { cursor: pointer; color: var(--green); }
+small { color: var(--muted); }
+.rhythm-heading.rhythm-heading { margin-bottom: 12px; }
+.beatmap-files, .measure-tools, .modifier-frame, .drum-program, .drum-pad-panel, .panel-pocket {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--inner);
+}
+.beatmap-files, .measure-tools, .program-actions, .program-compose, .program-route,
+.modifier-buttons, .workflow-rail, .pocket-controls, .pad-record-bar, .hit-note-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.beatmap-files { margin-bottom: 16px; }
+.beatmap-files p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 11px; }
+.measure-tools, .drum-program, .modifier-frame { margin: 0 0 13px; }
+.measure-tools select { max-width: 65px; }
+.modifier-frame legend { color: var(--green); font: 10px var(--mono); }
+.modifier-buttons button { display: inline-flex; gap: 6px; align-items: center; }
+.modifier-buttons button[aria-pressed="true"], #pad-steps button[aria-pressed="true"], .program-route button.playing {
+  background: var(--green); color: var(--inner);
+}
+.beat-mod-tools { margin-top: 7px; color: var(--muted); font-size: 10px; }
+.workflow-rail, .program-columns { margin-top: 10px; }
+.program-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.program-columns > div { min-width: 0; }
+.program-columns p { font-size: 11px; color: var(--muted); }
+.program-route { margin-top: 8px; max-height: 160px; overflow: auto; }
+.program-columns textarea {
+  width: 100%; resize: vertical; border: 1px solid var(--line);
+  border-radius: 5px; padding: 8px; color: var(--text); background: #121914; font: 12px var(--mono);
+}
+.program-compose input[type=number] { width: 62px; }
+.rhythm-math, .panel-pocket { margin-top: 12px; }
+.rhythm-math summary { margin-bottom: 6px; }
+.beat-playground { display: grid; grid-template-columns: minmax(250px, .95fr) minmax(0, 1.25fr); gap: 12px; margin-top: 12px; }
+.beat-playground .hit-shaper { margin-top: 0; }
+.beat-playground .hit-knobs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.beat-playground .hit-knobs label { min-width: 0; }
+.beat-playground .hit-nudge { padding: 3px 6px; }
+.pad-heading, .signal-route { display: flex; justify-content: space-between; gap: 4px; color: var(--muted); }
+.pad-heading { color: var(--green); }
+.pad-record-bar { margin: 8px 0; }
+.drum-pads { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.drum-pads button { min-height: 47px; padding: 6px; text-align: left; overflow-wrap: anywhere; }
+.drum-pads kbd { color: var(--green); padding-right: 4px; }
+.drum-pads button.is-hit, .drum-pads button:active { background: var(--green); color: var(--inner); }
+.drum-pad-panel p, .signal-route { font-size: 10px; }
+.pad-assignments, .pad-sequence { margin-bottom: 8px; }
+#pad-assignments label { display: flex; justify-content: space-between; margin: 5px 0; }
+#pad-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 7px 0; }
+#pad-steps button { padding: 4px 6px; }
+.pocket-controls { margin-top: 8px; }
+.pad-cycle-grid { height: 83px; display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); margin: 10px 0; touch-action: none; }
+.pad-cycle-point { position: relative; padding: 0; border: 1px solid var(--line); border-radius: 0; min-width: 0; }
+.pad-cycle-point span { position: absolute; left: 1px; right: 1px; background: var(--green); pointer-events: none; }
+
+@media (max-width: 760px) {
+  main { padding: 10px 12px 20px; }
+  .beat-playground, .program-columns { grid-template-columns: 1fr; }
+}
+@media (max-width: 440px) {
+  .beat-playground .hit-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rhythm-section input:not([type]) { max-width: 100%; }
+}

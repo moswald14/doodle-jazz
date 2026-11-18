@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJRenderer } from './jazz-core.mjs?v=2';
+import { DJRenderer } from './jazz-core.mjs?v=3';
 import { JAZZ_CLIP_MAX_SECONDS } from './jazz-radio-contract.mjs';
 
 class DoodleJazzProcessor extends AudioWorkletProcessor {

@@ -1,0 +1,14 @@
+'use strict';
+
+for(const [field,step] of Object.entries({pitch:1,decay:1,sweep:1,noise:1,tone:10,level:1})){const input=$('hit-'+field);input.step=field==='pitch'?'any':step;for(const direction of [-1,1]){const button=document.createElement('button');button.className='hit-nudge';button.textContent=direction<0?'◀':'▶';button.setAttribute('id',`hit-${field}-${direction<0?'less':'more'}`);button.setAttribute('aria-label',`${direction<0?'Decrease':'Increase'} ${field} by ${step}`);button.addEventListener('click',()=>{if(field==='pitch'&&window.nudgeDrumPitch){window.nudgeDrumPitch(direction);return;}const value=clamp(+input.value+direction*step,+(input.min||input.getAttribute('min')),+(input.max||input.getAttribute('max')));input.value=value;drum.tracks[drum.selected][field]=value/hitFields[field].scale;renderHitShaper();});input.parentElement.append(button);}}
+const modStash=new Map(),modLabels={up:'↑',down:'↓',soft:'◇',short:'↤',long:'↔',double:'••',triple:'•••',flam:'·•',accent:'◆'};
+window.paintBeatModifier=(track,step)=>{const modifier=$('beat-modifier').value;if(modifier==='edit')return false;track.modifiers??=Array(track.steps.length).fill('');track.modifiers[step]=modifier==='none'?'':modifier;if(modifier!=='none'&&track.steps[step]===0)track.steps[step]=.5;return true;};
+window.beatModifierLabel=(track,step)=>modLabels[track.modifiers?.[step]]||'';
+window.stashBeatModifiers=()=>{const key=`${drum.meter.numerator}/${drum.meter.denominator}`,prior=modStash.get(key)||[];modStash.set(key,[...drum.tracks,...drum.pads].map((t,i)=>{const values=[...(prior[i]||[])];t.steps.forEach((_,j)=>values[j]=t.modifiers?.[j]||'');return values;}));};
+window.restoreBeatModifiers=next=>{const prior=modStash.get(`${next.meter.numerator}/${next.meter.denominator}`);if(prior)[...next.tracks,...next.pads].forEach((t,i)=>t.modifiers=t.steps.map((_,j)=>prior[i]?.[j]??t.modifiers?.[j]??''));};window.clearBeatModifierStash=()=>modStash.clear();
+
+const modifierSpecs=[['edit','✎','Edit'],['double','••','Double-tap'],['triple','•••','Triplet'],['flam','·•','Flam'],['accent','◆','Accent'],['soft','◇','Soft'],['up','↑','Pitch up'],['down','↓','Pitch down'],['short','↤','Short'],['long','↔','Long'],['none','×','Erase']];
+function showModifier(){for(const b of document.querySelectorAll('[data-modifier]'))b.setAttribute('aria-pressed',String(b.dataset.modifier===$('beat-modifier').value));}
+for(const [id,symbol,label]of modifierSpecs){const b=document.createElement('button');b.setAttribute('data-modifier',id);b.setAttribute('id','modifier-'+id);const icon=document.createElement('b');icon.textContent=symbol;const text=document.createElement('span');text.textContent=label;b.append(icon,text);b.addEventListener('click',()=>{$('beat-modifier').value=id;showModifier();});$('modifier-buttons').append(b);}
+$('beat-modifier').addEventListener('change',showModifier);showModifier();
+window.showModifier = showModifier;

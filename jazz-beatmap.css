@@ -1,0 +1,50 @@
+.beatmap-entry {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: -5px 0 24px;
+}
+.beatmap-entry p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.beatmap-entry button,
+.beatmap-dialog-bar button {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: var(--soft);
+  font-weight: 600;
+  font-size: 12px;
+}
+#beatmap-dialog {
+  width: min(1400px, calc(100% - 28px));
+  height: min(960px, calc(100dvh - 28px));
+  max-width: none;
+  max-height: none;
+  border: 1px solid var(--line);
+  padding: 0;
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  overflow: hidden;
+}
+#beatmap-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+#beatmap-dialog::backdrop { background: rgb(11 26 22 / .66); }
+.beatmap-dialog-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+.beatmap-dialog-bar h2 { margin: 0 auto 0 0; font: 18px Georgia, serif; }
+.beatmap-dialog-bar form { margin: 0; }
+.beatmap-dialog-bar button:disabled { cursor: default; }
+#beatmap-frame { width: 100%; height: 100%; border: 0; background: #161f1a; }
+@media (max-width: 560px) {
+  #beatmap-dialog { width: 100%; height: 100dvh; border-radius: 0; }
+  .beatmap-dialog-bar { padding: 8px; flex-wrap: wrap; }
+}

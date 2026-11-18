@@ -159,13 +159,7 @@ export async function syncPassage(entry) {
   return learned;
 }
 
-const urls = new Set();
 let renderVersion = 0;
-
-export function releasePassageAudio() {
-  for (const url of urls) URL.revokeObjectURL(url);
-  urls.clear();
-}
 
 export async function showPassages() {
   const version = ++renderVersion;
@@ -177,23 +171,36 @@ export async function showPassages() {
     });
     if (version !== renderVersion) return;
     const shelf = $('saved-chords');
-    shelf.replaceChildren();
-    releasePassageAudio();
+    const existing = new Map(Array.from(shelf.children, card => [card.dataset.passageId, card]));
+    const ids = new Set(entries.map(entry => entry.id));
+    for (const [id, card] of existing) {
+      if (ids.has(id)) continue;
+      URL.revokeObjectURL(card.querySelector('audio').src);
+      card.remove();
+    }
     status.textContent = entries.length ? '' : 'Your saved passages will appear here.';
     entries.sort((a, b) => b.receipt.createdAt.localeCompare(a.receipt.createdAt));
-    for (const entry of entries) {
-      const card = document.createElement('article');
-      card.className = 'saved-passage';
-      const title = document.createElement('p');
-      title.textContent = entry.receipt.chords.map(({ chord }) => chord).join(' · ');
-      const audio = document.createElement('audio');
-      audio.controls = true;
-      audio.preload = 'none';
-      audio.setAttribute('aria-label', 'Replay ' + title.textContent);
-      audio.src = URL.createObjectURL(entry.audio);
-      urls.add(audio.src);
-      const actions = document.createElement('div');
-      actions.className = 'jazz-tool-actions';
+    for (const [position, entry] of entries.entries()) {
+      let card = existing.get(entry.id);
+      if (!card) {
+        card = document.createElement('article');
+        card.dataset.passageId = entry.id;
+        card.className = 'saved-passage';
+        const title = document.createElement('p');
+        title.textContent = entry.receipt.chords.map(({ chord }) => chord).join(' · ');
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.preload = 'none';
+        audio.setAttribute('aria-label', 'Replay ' + title.textContent);
+        audio.src = URL.createObjectURL(entry.audio);
+        const actions = document.createElement('div');
+        actions.className = 'jazz-tool-actions';
+        card.append(title, audio, actions);
+        shelf.insertBefore(card, shelf.children[position] || null);
+      }
+      // Signing a receipt updates the actions without interrupting any replay.
+      const actions = card.querySelector('.jazz-tool-actions');
+      actions.replaceChildren();
       function button(text, action) {
         const control = document.createElement('button');
         control.type = 'button';
@@ -222,8 +229,6 @@ export async function showPassages() {
           status.textContent = 'This passage could not be removed.';
         }
       });
-      card.append(title, audio, actions);
-      shelf.append(card);
     }
   } catch {
     if (version === renderVersion) status.textContent = 'The saved shelf is unavailable in this browser.';
