@@ -52,6 +52,14 @@ export function encodePepeTransfer(recipient, amount) {
   if (!isAddress(recipient) || typeof amount !== 'string' || !/^[1-9][0-9]{0,76}$/.test(amount) || BigInt(amount) >= 1n << 256n) throw new Error('Invalid PEPE transfer.');
   return '0xa9059cbb' + recipient.slice(2).toLowerCase().padStart(64, '0') + BigInt(amount).toString(16).padStart(64, '0');
 }
+export function quotePepeUnits(price) {
+  if (typeof price !== 'string' || !/^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,18})?$/.test(price)) throw new Error('PEPE price unavailable.');
+  const [whole, fraction = ''] = price.split('.');
+  const scale = 10n ** BigInt(fraction.length), rate = BigInt(whole + fraction);
+  if (!rate || rate > 1000n * scale || rate * 10n ** 12n < scale) throw new Error('PEPE price outside the supported range.');
+  const numerator = 2n * 10n ** 18n * scale, denominator = 100n * rate;
+  return (numerator + denominator - 1n) / denominator;
+}
 export function formatPepeUnits(amount) {
   if (typeof amount !== 'string' || !/^[0-9]{1,77}$/.test(amount)) throw new Error('Invalid PEPE amount.');
   const padded = amount.padStart(19, '0');

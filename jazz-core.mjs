@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 /* Doodle Jazz. Original procedural composition and synthesized instruments. */
-import { validateJazzContext, validateJazzResult, validateJazzProgression } from './jazz-name-contract.mjs';
+import { validateJazzContext, validateJazzResult, validateJazzProgression } from './jazz-name-contract.mjs?v=2';
 import { DJ_GENRES, djGenreChart } from './jazz-genres.mjs';
 import { validateJazzArrangement } from './jazz-radio-contract.mjs';
 const DJ_NOTES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -66,7 +66,8 @@ function djValidateFavoriteProgressions(input) {
       || !Number.isInteger(entry.tonic) || entry.tonic < 0 || entry.tonic > 11) throw new Error('Invalid favorite Jazz progression.');
     const weight = Object.hasOwn(entry, 'weight') ? entry.weight : 1;
     if (!Number.isInteger(weight) || weight < 1 || weight > 100) throw new Error('Invalid favorite Jazz weight.');
-    return { style: entry.style, tonic: entry.tonic, chords: validateJazzProgression(entry.chords), weight };
+    return { style: entry.style, tonic: entry.tonic, chords: validateJazzProgression(entry.chords), weight,
+      ...(entry.part ? { part: validateJazzResult(entry.part) } : {}) };
   });
 }
 
@@ -158,6 +159,7 @@ class DJComposer {
     this.motif = [...DJ_MOTIFS[0]];
     this.phrase = null; this.lastVoicing = [];
     this.favorite = null;
+    this.recallNext = true;
   }
   configure(change) {
     const arrangement = validateJazzArrangement({ ...this.config, ...this.pending, ...change });
@@ -174,9 +176,13 @@ class DJComposer {
     if (Number.isFinite(change.tempo)) this.config.tempo = djClamp(change.tempo, 55, 180);
     if (Number.isFinite(change.swing)) this.config.swing = djClamp(change.swing, 0.5, 0.72);
     Object.assign(this.config, validateJazzArrangement({ ...this.config, ...change }));
-    if (Object.hasOwn(change, 'favoriteProgressions')) this.config.favoriteProgressions = change.favoriteProgressions;
+    if (Object.hasOwn(change, 'favoriteProgressions')) {
+      this.config.favoriteProgressions = change.favoriteProgressions;
+      this.recallNext = true;
+    }
     if (reset) {
       this.bar = 0; this.chorus = 0; this.set++;
+      this.recallNext = true;
       this.tonic = (DJ_STYLES[this.config.style].tonic + this.rng.pick([0, 0, 2, 5, 7])) % 12;
       if (this.config.keyRoot !== 'auto') this.tonic = this.config.keyRoot;
       this.motif = [...this.rng.pick(DJ_MOTIFS)];
@@ -204,10 +210,15 @@ class DJComposer {
   chooseProgression() {
     this.favorite = null;
     const choices = this.config.favorLikes ? this.config.favoriteProgressions.filter(entry => entry.style === this.config.style) : [];
+    const recall = this.recallNext;
+    this.recallNext = false;
     // The legacy random stream is untouched when no matching feedback exists.
-    if (!choices.length || this.rng.next() >= 0.65) return;
-    let position = this.rng.next() * choices.reduce((sum, entry) => sum + entry.weight, 0);
-    this.favorite = choices.find(entry => (position -= entry.weight) < 0) || choices.at(-1);
+    if (!choices.length || (!recall && this.rng.next() >= 0.65)) return;
+    if (recall) this.favorite = choices[0];
+    else {
+      let position = this.rng.next() * choices.reduce((sum, entry) => sum + entry.weight, 0);
+      this.favorite = choices.find(entry => (position -= entry.weight) < 0) || choices.at(-1);
+    }
     this.tonic = this.config.keyRoot === 'auto' ? this.favorite.tonic : this.config.keyRoot;
     this.motif = [...this.rng.pick(DJ_MOTIFS)]; this.phrase = null;
   }
@@ -490,17 +501,18 @@ class DJRenderer {
           if (matches(part)) { this.activePart = part; this.notify({ partApplied: part.requestId, set: bar.info.set }); }
           else this.notify({ partRejected: part.requestId, reason: 'SET_CHANGED' });
         }
-        if (this.activePart) {
+        const playedPart = this.activePart?.result || this.composer.favorite?.part;
+        if (playedPart) {
           const seconds = 60 / bar.info.tempo, swing = bar.info.swing;
           bar.events = bar.events.filter(e => e.role !== 'drums');
-          for (const hit of this.activePart.result.pattern) {
+          for (const hit of playedPart.pattern) {
             const beat = hit.step * bar.info.beatsPerBar / 16, whole = Math.floor(beat), frac = beat - whole;
             const time = (whole + (frac <= 0.5 ? frac * 2 * swing : swing + (frac - 0.5) * 2 * (1 - swing))) * seconds;
             const duration = bar.info.beatsPerBar === 4 ? 0.25 * seconds : Math.min(bar.info.beatsPerBar / 16 * seconds, bar.duration - time);
             bar.events.push({ instrument: hit.instrument, role: 'drums', note: 0, beat, time, duration, velocity: hit.velocity });
           }
           bar.events.sort((a, b) => a.time - b.time);
-          bar.info.namedTitle = this.activePart.result.title;
+          bar.info.namedTitle = playedPart.title;
         }
         if (bar.info.beatOnly) this.voices = this.voices.filter(voice => voice.role === 'drums');
         this.events = bar.events; this.eventIndex = 0; this.barStart = this.nextBar;

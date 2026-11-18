@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank, djValidateFavoriteProgressions } from './jazz-core.mjs';
+import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank } from './jazz-core.mjs?v=2';
 import { djShuffleSettings } from './jazz-settings.mjs';
 import { createJazzCastUI } from './jazz-cast.mjs';
 import { createJazzBandUI } from './jazz-band-ui.mjs';
+import { createJazzNamingUI } from './jazz-name-ui.mjs?v=2';
 import { parseJazzDotVoice } from './jazz-dot-voices.mjs';
 import { JAZZ_DEFAULT_SETTINGS, validateJazzArrangement } from './jazz-radio-contract.mjs';
-import { chordReceipt, downloadReceipt, encodeJazzWave, savePassage, showPassages } from './jazz-library.mjs';
+import { chordReceipt, downloadReceipt, encodeJazzWave, loadLearnedProgressions, readLegacyProgressions, rememberNamedProgression, savePassage, showPassages, syncPassage } from './jazz-library.mjs?v=2';
+import { jazzSiteConnected } from './jazz-site.mjs?v=2';
 import { tickAt } from './core.mjs';
 
 (() => {
@@ -14,7 +16,7 @@ import { tickAt } from './core.mjs';
   const defaults = { ...JAZZ_DEFAULT_SETTINGS, volume: 45, muted: false, night: false, neverStop: false,
     voice: false, trackMutes: { piano: false, bass: false, drums: false } };
   const prefs = { ...defaults, trackMutes: { ...defaults.trackMutes } };
-  let favoriteProgressions = [];
+  let favoriteProgressions = readLegacyProgressions();
   let assignments = {};
   try {
     const stored = JSON.parse(localStorage.getItem(storageKey));
@@ -28,7 +30,6 @@ import { tickAt } from './core.mjs';
       Object.assign(prefs, validateJazzArrangement(stored));
     }
   } catch (_) { /* Playback also works when browser storage is unavailable. */ }
-  try { favoriteProgressions = djValidateFavoriteProgressions(JSON.parse(localStorage.getItem('jazz-liked-progressions')) ?? []); } catch {}
   try {
     const stored = JSON.parse(localStorage.getItem('jazz-player-voices'));
     if (stored) for (const part of parts) if (stored[part]) assignments[part] = parseJazzDotVoice(stored[part]);
@@ -41,6 +42,26 @@ import { tickAt } from './core.mjs';
   let pendingShuffle = null, previousSettings = null;
   let nextShuffleAt = 3600, capturePending = false, chordHistory = [];
   let voiceBusy = false, lastVoiceAt = null, voiceError = null;
+  const snapshots = new Map();
+  const naming = createJazzNamingUI({
+    getPlayback: () => ({ session: sessionToken, state, info: state === 'playing' ? lastInfo : null }),
+    getSnapshot: () => new Promise((resolve, reject) => {
+      if (!node || state !== 'playing') { reject(new Error('Play Jazz before naming this set.')); return; }
+      const id = crypto.randomUUID();
+      const timeout = setTimeout(() => {
+        snapshots.delete(id);
+        reject(new Error('Let the trio play for a moment, then try again.'));
+      }, 3000);
+      snapshots.set(id, { resolve, reject, timeout });
+      node.port.postMessage({ nameSnapshot: id });
+    }),
+    applyResult(id, result, info) {
+      node?.port.postMessage({ jazzPart: { requestId: id, result, targetSet: info.set, targetSeed: info.seed } });
+    },
+    async rememberResult(id, musicalContext, result) {
+      learn(await rememberNamedProgression(id, musicalContext, result));
+    }
+  });
   const casting = createJazzCastUI({ getPlayback: () => state, getSource: () => {
     if (!context || !analyser || state !== 'playing') throw new Error('Play Jazz before casting.');
     const sourceNode = analyser, destination = context.createMediaStreamDestination();
@@ -99,6 +120,11 @@ import { tickAt } from './core.mjs';
   function paintBand() {
     band.paint(getStation(), prefs, state === 'starting');
   }
+  function learn(progressions) {
+    favoriteProgressions = progressions;
+    node?.port.postMessage({ composition: { favoriteProgressions } });
+    paintBand();
+  }
   function spokenColor() { return tickAt().color.slice(1).split('').join(' '); }
   function paintClock() {
     const { color } = tickAt();
@@ -139,19 +165,26 @@ import { tickAt } from './core.mjs';
     const receipt = chordReceipt(chords, sampleRate);
     const audio = encodeJazzWave(samples, sampleRate);
     try {
-      await savePassage(receipt, audio);
-      const first = chords[0];
-      if (chords.every(chord => !chord.beatOnly && chord.style === first.style && chord.tonic === first.tonic)) {
-        const candidate = { style: first.style, tonic: first.tonic, chords: chords.map(({ root, quality }) => ({ root, quality })), weight: 1 };
-        const key = entry => JSON.stringify([entry.style, entry.tonic, entry.chords]);
-        const previous = favoriteProgressions.find(entry => key(entry) === key(candidate));
-        if (previous) candidate.weight = Math.min(100, previous.weight + 1);
-        favoriteProgressions = djValidateFavoriteProgressions([candidate, ...favoriteProgressions.filter(entry => entry !== previous)].slice(0, 32));
-        try { localStorage.setItem('jazz-liked-progressions', JSON.stringify(favoriteProgressions)); } catch {}
-        node?.port.postMessage({ composition: { favoriteProgressions } });
-      }
-      $('dig-status').textContent = 'Eight chords saved in your shelf.';
+      const anchor = chords[4];
+      const matches = chord => !chord.beatOnly && chord.style === anchor.style && chord.tonic === anchor.tonic && chord.set === anchor.set;
+      let from = 4, to = 5;
+      while (from > 0 && matches(chords[from - 1])) from--;
+      while (to < chords.length && matches(chords[to])) to++;
+      const candidate = anchor.beatOnly ? null : {
+        style: anchor.style, tonic: anchor.tonic,
+        chords: chords.slice(from, to).map(({ root, quality }) => ({ root, quality }))
+      };
+      const { entry, progressions } = await savePassage(receipt, audio, candidate);
+      learn(progressions);
+      const status = $('dig-status');
+      status.textContent = candidate ? 'Phrase saved. The band will bring this progression back.' : 'Beat saved in your shelf.';
       void showPassages();
+      if (candidate && jazzSiteConnected) {
+        void syncPassage(entry).then(learned => {
+          status.textContent = learned ? 'Phrase saved and signed on Doodlechain.' : 'Doodlechain signed the phrase. Retry band memory in your shelf.';
+          void showPassages();
+        }, () => { status.textContent = 'Phrase saved. Use Save to Doodlechain in your shelf to retry signing.'; });
+      }
     } catch (error) {
       $('dig-status').textContent = error.message || 'This passage could not be saved in your browser.';
     } finally {
@@ -175,6 +208,7 @@ import { tickAt } from './core.mjs';
     $('live-label').textContent = playing ? 'ON & ON' : next === 'paused' ? 'TAKING FIVE' : next === 'starting' ? 'TUNING UP' : 'TAKE A SEAT';
     if (!playing) { $('signal').value = 0; document.querySelectorAll('.beat-dots i').forEach(e => e.classList.remove('active')); }
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : next === 'paused' ? 'paused' : 'none';
+    naming.playbackChanged();
     paintBand();
     paintKeepsakes();
     casting.playbackChanged();
@@ -232,6 +266,17 @@ import { tickAt } from './core.mjs';
   }
   function receive(info, token) {
     if (token !== sessionToken || !context) return;
+    if (info.nameSnapshot) {
+      const pending = snapshots.get(info.nameSnapshot);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        snapshots.delete(info.nameSnapshot);
+        if (info.context) pending.resolve(info.context);
+        else pending.reject(new Error('Let the trio play for a moment, then try again.'));
+      }
+      return;
+    }
+    if (info.partApplied || info.partRejected) { naming.receive(info); return; }
     if (info.sceneApplied) {
       if (info.sceneApplied === pendingShuffle) {
         pendingShuffle = null; pendingChange = false;
@@ -249,7 +294,10 @@ import { tickAt } from './core.mjs';
       return;
     }
     if (!Number.isInteger(info.chordIndex)) return;
+    naming.receive(info);
+    const previouslyPlaying = lastInfo;
     lastInfo = info;
+    if (!previouslyPlaying || previouslyPlaying.set !== info.set) naming.playbackChanged();
     if (chordHistory.at(-1)?.index !== info.chordIndex) {
       chordHistory.push({
         index: info.chordIndex, chord: info.chord, root: info.chordRoot, quality: info.chordQuality,
@@ -268,7 +316,7 @@ import { tickAt } from './core.mjs';
     }
     $('chord').textContent = info.beatOnly ? 'BEAT' : info.chord;
     $('track-name').textContent = info.namedTitle || DJ_STYLES[info.style].name + ' · ' + info.key;
-    $('track-info').textContent = info.phase + ' / ' + info.tempo + ' BPM';
+    $('track-info').textContent = (info.fromFavorite ? 'Saved progression · ' : '') + info.phase + ' / ' + info.tempo + ' BPM';
     $('position').textContent = 'BAR ' + info.bar + '/' + info.bars + ' · CHORUS ' + info.chorus;
     const s = Math.floor(info.seconds), h = Math.floor(s / 3600);
     $('elapsed').textContent = (h ? h + ':' : '') + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
@@ -295,7 +343,7 @@ import { tickAt } from './core.mjs';
       await ctx.resume();
       if (token !== sessionToken) return;
       if (!ctx.audioWorklet) throw new Error('Open the HTTPS address for Doodle Jazz, then press Play.');
-      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs', import.meta.url));
+      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs?v=2', import.meta.url));
       if (token !== sessionToken) return;
       if (!bank && parts.some(part => assignments[part])) {
         try { bank = await prepareBank(assignments); }
@@ -347,6 +395,11 @@ import { tickAt } from './core.mjs';
     sessionToken++;
     void casting.stop(); pendingShuffle = null;
     lastInfo = null;
+    for (const pending of snapshots.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Play Jazz before naming this set.'));
+    }
+    snapshots.clear();
     nextShuffleAt = 3600;
     chordHistory = [];
     capturePending = false;
@@ -443,7 +496,8 @@ import { tickAt } from './core.mjs';
   if ('mediaSession' in navigator) for (const [action, handler] of [['play', play], ['pause', pause], ['stop', stopPlayback], ['nexttrack', newSet]]) {
     try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) {}
   }
-  window.addEventListener('pagehide', stop);
+  window.addEventListener('pagehide', () => { naming.dispose(); stop(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) naming.resume(); });
   function meterTick() {
     if (state === 'playing' && analyser && !document.hidden) {
       analyser.getFloatTimeDomainData(meterData);
@@ -466,6 +520,7 @@ import { tickAt } from './core.mjs';
   $('chord-library').hidden = false;
   paintClock();
   setInterval(paintClock, 1000);
+  void loadLearnedProgressions().then(learn, () => {});
   void showPassages();
   paintPrefs(); paintState('idle'); requestAnimationFrame(meterTick);
 })();

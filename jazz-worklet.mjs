@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJRenderer } from './jazz-core.mjs';
+import { DJRenderer } from './jazz-core.mjs?v=2';
 import { JAZZ_CLIP_MAX_SECONDS } from './jazz-radio-contract.mjs';
 
 class DoodleJazzProcessor extends AudioWorkletProcessor {
@@ -17,10 +17,16 @@ class DoodleJazzProcessor extends AudioWorkletProcessor {
     };
   }
   update(info) {
+    if (info.nameSnapshot && info.context) {
+      const { set, style, tonic } = info.context;
+      const progression = this.chords.filter(chord => chord.set === set && chord.style === style && chord.tonic === tonic)
+        .map(({ root, quality }) => ({ root, quality }));
+      if (progression.length) info.context.progression = progression;
+    }
     if (Number.isInteger(info.chordIndex) && this.chords.at(-1)?.index !== info.chordIndex) {
       const chord = {
         index: info.chordIndex, frame: Math.round(info.seconds * sampleRate), chord: info.chord,
-        style: info.style, key: info.key, tonic: info.tonic, beatOnly: info.beatOnly,
+        style: info.style, key: info.key, tonic: info.tonic, beatOnly: info.beatOnly, set: info.set,
         root: info.chordRoot, quality: info.chordQuality
       };
       this.chords.push(chord);
