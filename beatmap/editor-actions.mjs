@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './render-request.mjs?v=5';
+import { prepareBeatmap } from './render-request.mjs?v=6';
 import { compactBeatmapProject, loadBeatmapProjects } from './live-project.mjs';
 
 const controls = id => document.getElementById(id);
 const embedded = window.parent !== window;
+const root = document.documentElement;
 let draftTimer, queued = false, lastSound;
 
 if (embedded) {
-  controls('beat-jazz').hidden = false;
+  root.dataset.embedded = '';
+  root.classList.toggle('night', new URL(location.href).searchParams.get('theme') === 'night');
   controls('program-live-setting').hidden = false;
   const transports = ['beat-play', 'program-play'].map(controls);
   let previewing = false;
@@ -15,6 +17,8 @@ if (embedded) {
     const active = transports.some(button => button.getAttribute('aria-pressed') === 'true');
     if (active === previewing) return;
     previewing = active;
+    if (active) paintDrumCursor();
+    else followJazzCursor();
     window.parent.postMessage({ type: 'doodle-jazz-beatmap-preview', active }, location.origin);
   });
   for (const button of transports) watchPreview.observe(button, { attributeFilter: ['aria-pressed'] });
@@ -33,7 +37,7 @@ function shareBeatmap(updateBand = true) {
     if (sound === lastSound) return;
     if (updateBand) window.parent.postMessage({ type: 'doodle-jazz-beatmap-edit', project }, location.origin);
     lastSound = sound;
-  } catch (error) { controls('beat-jazz-status').textContent = error.message; }
+  } catch (error) { notice(error.message); }
 }
 
 controls('program-midi').addEventListener('click', async () => {
@@ -69,9 +73,8 @@ window.addEventListener('message', ({ origin, source, data }) => {
     shareBeatmap();
     saveBeatmapDraft();
   }
-  if (data.type === 'doodle-jazz-beatmap-status' && typeof data.message === 'string') {
-    controls('beat-jazz-status').textContent = data.message;
-  }
+  if (data.type === 'doodle-jazz-beatmap-theme') root.classList.toggle('night', data.night === true);
+  if (data.type === 'doodle-jazz-beatmap-cursor') window.setJazzPlayhead(data.position);
 });
 
 try {

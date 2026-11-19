@@ -6,7 +6,7 @@ import './wave-library.js';
 import './drum-dsp.js?v=5';
 import './drum-program.js';
 import './midi-io.js';
-import { BEATMAP_BYTE_LIMIT, BEATMAP_RATE, validateBandBeatmap } from './band-beatmap.mjs';
+import { BEATMAP_BYTE_LIMIT, BEATMAP_RATE, validateBandBeatmap } from './band-beatmap.mjs?v=6';
 
 const { DrumDSP, DrumProgram, MidiIO, WaveLibrary } = globalThis;
 const drumNotes = { kick: 36, snare: 38, hat: 42, perc: 45,
@@ -23,24 +23,28 @@ function plan(project, program) {
     : Array.from({ length: pattern.bars }, (_, index) => index);
   const stepCount = DrumDSP.stepsPerBar(pattern.meter);
   const seconds = stepCount / 4 * 60 / pattern.bpm;
+  let offset = 0;
+  const grid = Array.from({ length: stepCount }, (_, step) => {
+    const span = DrumDSP.stepSeconds(pattern.bpm, pattern.swing, step);
+    const timing = { offset, span };
+    offset += span;
+    return timing;
+  });
   const tracks = DrumDSP.allTracks(pattern).filter(track => !track.mute && track.level > 0);
   const bars = Array.from({ length: pattern.bars }, (_, measure) => {
     const events = [];
-    let at = 0;
-    for (let i = 0; i < stepCount; i++) {
+    for (const [i, { offset, span }] of grid.entries()) {
       const step = measure * stepCount + i;
-      const span = DrumDSP.stepSeconds(pattern.bpm, pattern.swing, step);
       for (const track of tracks) {
         if (!track.steps[step]) continue;
         for (const hit of DrumDSP.hitEvents(track, step, span)) {
-          events.push({ ...hit, at: (at + hit.offset) / seconds });
+          events.push({ ...hit, at: (offset + hit.offset) / seconds });
         }
       }
-      at += span;
     }
     return events.sort((left, right) => left.at - right.at);
   });
-  return { pattern, waves, order, seconds, bars };
+  return { pattern, waves, order, seconds, bars, stepOffsets: grid.map(step => step.offset / seconds) };
 }
 
 function synthesize(waves, bars, rate, gain, chip) {
@@ -69,10 +73,10 @@ function synthesize(waves, bars, rate, gain, chip) {
 
 export function prepareForBand(project, program) {
   project ??= { ...DrumDSP.defaultKit(), library: WaveLibrary.stockWaves() };
-  const { waves, order, bars } = plan(project, program);
+  const { waves, order, bars, stepOffsets } = plan(project, program);
   const chip = program && project.editor?.chip === true;
   const usable = synthesize(waves, bars, BEATMAP_RATE, project.drumVolume, chip);
-  return validateBandBeatmap({ name: project.name, loop: !program || project.program.loop === true, order, ...usable });
+  return validateBandBeatmap({ name: project.name, loop: !program || project.program.loop === true, order, stepOffsets, ...usable });
 }
 
 export function renderProgram(project, gain) {

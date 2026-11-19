@@ -6,7 +6,9 @@ Doodle Jazz plays original jazz in your browser. Choose a genre, set the groove,
 
 The band recalls a matching liked progression when a new set starts. With the owner's Doodlekeeper connection configured, the site also saves a signed chord record to Doodlechain. The recording stays on the browser shelf for replay.
 
-Jazz uses beatMAP for its drums. Open **beatMAP editor** to edit up to eight measures, shape drum sounds, or record on the nine pads. Edits go live at the next bar and follow the trio's tempo and bar length. The editor opens existing `.beatmap.json` files and exports editable maps, WAV, and MIDI. Choose **Play this program in Jazz** to use the loop program's measure order. With looping off, the program plays once and leaves the drum track quiet until you edit it again. Your draft and drum source are saved in this browser. **Return to band drums** brings back the band's kit.
+Jazz uses beatMAP for its drums. Expand **Edit beatMAP** below the player to see the current measure and step. **Follow playhead** moves the grid with the music. Pick a measure to keep editing it while the measure buttons show where Jazz is playing. Edits go live at the next bar and follow the trio's tempo and bar length.
+
+The editor opens existing `.beatmap.json` files and exports editable maps, WAV, and MIDI. Choose **Play this program in Jazz** to use the loop program's measure order. With looping off, the program plays once and leaves the drum track quiet until you edit it again. Your draft and drum source are saved in this browser. **Return to band drums** brings back the band's kit.
 
 “Name this song” connects to the owner's Jazz checkout via the HTTPS gateway in `jazz-site-config.mjs`. Checkout locks a two-cent Ethereum PEPE quote, shows the separate ETH network fee, and waits for a confirmed transfer before requesting a title and beat. The saved title, groove, and chord progression can return in future sets. See the [Keeper Jazz setup](https://github.com/moswald14/doodletick/blob/main/keeper/JAZZ-NAMING.md) for the private OpenAI configuration.
 

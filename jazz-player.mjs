@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank } from './jazz-core.mjs?v=5';
+import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank } from './jazz-core.mjs?v=6';
 import { djShuffleSettings } from './jazz-settings.mjs';
 import { createJazzCastUI } from './jazz-cast.mjs';
 import { createJazzBandUI } from './jazz-band-ui.mjs?v=4';
 import { createJazzNamingUI } from './jazz-name-ui.mjs?v=4';
-import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=5';
+import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=6';
 import { parseJazzDotVoice } from './jazz-dot-voices.mjs';
 import { JAZZ_DEFAULT_SETTINGS, validateJazzArrangement } from './jazz-radio-contract.mjs';
 import { chordReceipt, downloadReceipt, encodeJazzWave, loadLearnedProgressions, readLegacyProgressions, rememberNamedProgression, savePassage, showPassages, syncPassage } from './jazz-library.mjs?v=3';
@@ -239,6 +239,7 @@ import { tickAt } from './core.mjs';
     $('tempo-value').textContent = prefs.tempo;
     $('tempo').setAttribute('aria-valuetext', prefs.tempo + ' beats per minute');
     document.documentElement.classList.toggle('night', prefs.night);
+    beatmap.theme(prefs.night);
     $('night').setAttribute('aria-pressed', prefs.night);
     $('night').setAttribute('aria-label', prefs.night ? 'Brighten the room' : 'Dim the room');
     $('mute').setAttribute('aria-pressed', prefs.muted);
@@ -287,6 +288,7 @@ import { tickAt } from './core.mjs';
   }
   function receive(info, token) {
     if (token !== sessionToken || !context) return;
+    if (Object.hasOwn(info, 'beatmapPlayhead')) { beatmap.playhead(info.beatmapPlayhead); return; }
     if (info.nameSnapshot) {
       const pending = snapshots.get(info.nameSnapshot);
       if (pending) {
@@ -373,7 +375,7 @@ import { tickAt } from './core.mjs';
       await ctx.resume();
       if (token !== sessionToken) return;
       if (!ctx.audioWorklet) throw new Error('Open the HTTPS address for Doodle Jazz, then press Play.');
-      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs?v=5', import.meta.url));
+      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs?v=6', import.meta.url));
       if (token !== sessionToken) return;
       if (!bank && parts.some(part => assignments[part])) {
         try { bank = await prepareBank(assignments); }

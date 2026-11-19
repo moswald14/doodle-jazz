@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './beatmap/render-request.mjs?v=5';
+import { prepareBeatmap } from './beatmap/render-request.mjs?v=6';
 import { appliedBeatmapKey, compactBeatmapProject, loadBeatmapProjects } from './beatmap/live-project.mjs';
 
 const sourceKey = 'doodle-jazz-drum-source-v1';
 
 export function createJazzBeatmapUI({ choose, preview, isStarted }) {
   const $ = id => document.getElementById(id);
-  const dialog = $('beatmap-dialog');
+  const panel = $('beatmap-panel');
   const frame = $('beatmap-frame');
   const restore = $('beatmap-restore');
   const label = $('beatmap-status');
@@ -15,24 +15,41 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
   try { enabled = localStorage.getItem(sourceKey) !== 'band'; } catch {}
   let generation = 0;
   let queued = null, pending = null, selected = null, failed = false;
+  let position = null, night = false, sizeObserver;
 
-  function tellEditor(message) {
-    frame.contentWindow?.postMessage({ type: 'doodle-jazz-beatmap-status', message }, location.origin);
+  function tellEditor(type, data = {}) {
+    frame.contentWindow?.postMessage({ type: `doodle-jazz-beatmap-${type}`, ...data }, location.origin);
   }
 
   function status(message) {
-    if (label.textContent === message) return;
     label.textContent = message;
-    tellEditor(message);
   }
 
   function paintSource() {
     restore.textContent = enabled ? 'Return to band drums' : 'Use beatMAP drums';
   }
 
-  $('beatmap-open').addEventListener('click', () => {
-    if (!frame.hasAttribute('src')) frame.src = new URL('./beatmap/index.html?v=5', import.meta.url).href;
-    if (!dialog.open) dialog.showModal();
+  function syncEditor() {
+    tellEditor('theme', { night });
+    tellEditor('cursor', { position });
+  }
+
+  function playhead(next) {
+    if (!next && !position) return;
+    position = next;
+    if (panel.open) tellEditor('cursor', { position });
+  }
+
+  panel.addEventListener('toggle', () => {
+    if (!panel.open) {
+      preview(false);
+      tellEditor('close');
+    } else if (frame.hasAttribute('src')) syncEditor();
+    else {
+      const editorUrl = new URL('./beatmap/index.html?v=6', import.meta.url);
+      if (night) editorUrl.searchParams.set('theme', 'night');
+      frame.src = editorUrl.href;
+    }
   });
   restore.addEventListener('click', () => {
     enabled = !enabled;
@@ -48,10 +65,16 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
       status(isStarted() ? 'Band drums return on the next bar.' : 'Band drums selected.');
     }
   });
-  frame.addEventListener('load', () => tellEditor(label.textContent));
-  dialog.addEventListener('close', () => {
-    preview(false);
-    frame.contentWindow?.postMessage({ type: 'doodle-jazz-beatmap-close' }, location.origin);
+  frame.addEventListener('load', () => {
+    sizeObserver?.disconnect();
+    const content = frame.contentDocument?.querySelector('main');
+    if (!content) return;
+    sizeObserver = new ResizeObserver(([entry]) => {
+      const height = Math.ceil(entry.target.getBoundingClientRect().height);
+      if (height) frame.style.height = `${height}px`;
+    });
+    sizeObserver.observe(content);
+    syncEditor();
   });
 
   const prepare = (project, program) => prepareBeatmap({ action: 'band', project, program });
@@ -89,7 +112,7 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
             localStorage.setItem(appliedBeatmapKey, JSON.stringify(applied));
           } catch {}
         }
-        status(isStarted() ? `${prepared.name} updates on the next bar.` : `${prepared.name} is ready to play the drums.`);
+        status(isStarted() ? `${prepared.name} · changes queued for the next bar` : `${prepared.name} · ready`);
       } catch (error) {
         if (revision !== generation) continue;
         if (!selected) {
@@ -113,7 +136,7 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
 
   window.addEventListener('message', ({ source, origin, data }) => {
     if (origin !== location.origin || source !== frame.contentWindow) return;
-    if (dialog.open && data?.type === 'doodle-jazz-beatmap-preview' && typeof data.active === 'boolean') preview(data.active);
+    if (panel.open && data?.type === 'doodle-jazz-beatmap-preview' && typeof data.active === 'boolean') preview(data.active);
     if (data?.type === 'doodle-jazz-beatmap-edit' && data.project) {
       draft = data.project;
       schedule();
@@ -125,6 +148,12 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
   else status('Band drums selected.');
 
   return {
+    playhead,
+    theme(dark) {
+      if (dark === night) return;
+      night = dark;
+      if (panel.open) tellEditor('theme', { night });
+    },
     async ready() {
       while (enabled && pending) await pending;
     },
@@ -132,13 +161,14 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
       if (revision === generation) status(message);
     },
     playing(name, revision) {
-      if (!failed && revision === generation) status(`${name} is playing the drums. Edits take effect on the next bar.`);
+      if (!failed && revision === generation) status(`${name} · live`);
     },
     finished(name, revision) {
       if (!failed && revision === generation) status(`${name} finished. The drum track is quiet.`);
     },
     stopped() {
-      if (!failed && !pending && selected) status(`${selected} is ready to play the drums.`);
+      playhead(null);
+      if (!failed && !pending && selected) status(`${selected} · ready`);
     }
   };
 }

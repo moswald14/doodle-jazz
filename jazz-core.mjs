@@ -3,7 +3,7 @@
 import { validateJazzContext, validateJazzResult, validateJazzProgression } from './jazz-name-contract.mjs?v=2';
 import { DJ_GENRES, djGenreChart } from './jazz-genres.mjs';
 import { validateJazzArrangement } from './jazz-radio-contract.mjs';
-import { BEATMAP_RATE, validateBandBeatmap } from './beatmap/band-beatmap.mjs';
+import { BEATMAP_RATE, validateBandBeatmap } from './beatmap/band-beatmap.mjs?v=6';
 const DJ_NOTES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 const DJ_CHORDS = {
   maj9: [0, 4, 7, 11, 14], m9: [0, 3, 7, 10, 14], '13': [0, 4, 7, 10, 14, 21],
@@ -430,6 +430,8 @@ class DJRenderer {
     this.beatmap = null;
     this.beatmapBar = 0;
     this.beatmapRevision = 0;
+    this.beatmapStepOffsets = null;
+    this.nextBeatmapStep = Infinity;
   }
   configure(data) {
     if (Object.hasOwn(data, 'beatmap')) {
@@ -568,6 +570,12 @@ class DJRenderer {
         }
         if (bar.info.beatOnly) this.voices = this.voices.filter(voice => voice.role === 'drums');
         this.events = bar.events; this.eventIndex = 0; this.barStart = this.nextBar;
+        const stepOffsets = bar.info.beatmapMeasure ? this.beatmap.stepOffsets : null;
+        if (!stepOffsets && this.beatmapStepOffsets) this.notify({ beatmapPlayhead: null });
+        this.beatmapStepOffsets = stepOffsets;
+        this.beatmapStep = 0;
+        this.barDuration = bar.duration;
+        this.nextBeatmapStep = stepOffsets ? this.barStart : Infinity;
         this.nextBar += bar.duration * this.rate; this.info = bar.info;
         this.beat = 0; this.nextBeat = this.frame;
       }
@@ -576,6 +584,12 @@ class DJRenderer {
         this.notify({ ...this.info, beat: this.beat, beatNumber: this.beat + 1, seconds: this.frame / this.rate,
           chord: chord.text, chordIndex: chord.index, chordRoot: chord.root, chordQuality: chord.quality });
         this.beat++; this.nextBeat = this.barStart + this.beat * (60 / this.info.tempo) * this.rate;
+      }
+      if (this.frame >= this.nextBeatmapStep) {
+        const steps = this.beatmapStepOffsets;
+        this.notify({ beatmapPlayhead: { measure: this.info.beatmapMeasure, step: ++this.beatmapStep, steps: steps.length } });
+        this.nextBeatmapStep = this.beatmapStep < steps.length
+          ? this.barStart + steps[this.beatmapStep] * this.barDuration * this.rate : Infinity;
       }
       while (this.eventIndex < this.events.length && this.barStart + this.events[this.eventIndex].time * this.rate <= this.frame) {
         this.trigger(this.events[this.eventIndex++]);

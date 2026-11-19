@@ -10,6 +10,13 @@ export function validateBandBeatmap(value) {
       !value.order.every(index => Number.isInteger(index) && index >= 0 && index < value.bars.length)) {
     throw new Error('This beatMAP could not be prepared for the band.');
   }
+  if (value.stepOffsets !== undefined) {
+    const steps = value.stepOffsets;
+    if (!Array.isArray(steps) || steps[0] !== 0 || steps.length > 20 ||
+        !Array.from(steps).every((step, index) => Number.isFinite(step) && step < 1 && (index === 0 || step > steps[index - 1]))) {
+      throw new Error('Invalid beatMAP step timing.');
+    }
+  }
   let bytes = 0;
   for (const sample of value.samples) {
     if (!(sample instanceof Float32Array) || sample.length < 2 || sample.length > BEATMAP_RATE * 12) {

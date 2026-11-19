@@ -5,7 +5,8 @@ try{const saved=localStorage.getItem(BANK_KEY);if(saved)waveBank.waves=WaveLibra
 const defaultDrumKit=DrumDSP.defaultKit();
 const drum={...defaultDrumKit.pattern,padStash:new Map(),editBar:0,follow:true,measureStash:new Map(),volume:defaultDrumKit.drumVolume,selected:0,playing:false,pending:false,token:0,auditionToken:0,timer:null,nextTime:0,step:0,queue:[],current:-1,bus:null,context:null,cache:new Map(),voices:new Set()};
 window.dotDrum=drum;window.dotWaveBank=waveBank;
-const drumRows=[];
+const drumRows = [], stepNumbers = [];
+let jazzCursor = null;
 function selectedWave(){return waveBank.waves.find(w=>w.id===waveBank.selected)||waveBank.waves[0];}
 function waveSignal(id){if(!waveBank.cache.has(id)){const wave=waveBank.waves.find(w=>w.id===id);if(!wave)throw new Error('Choose a waveform from the library.');waveBank.cache.set(id,WaveLibrary.signal(wave));}return waveBank.cache.get(id);}
 function saveBankStorage(){try{localStorage.setItem(BANK_KEY,JSON.stringify({kind:'dot-wave-library',version:1,waves:waveBank.waves}));waveBank.storageOK=true;}catch(e){waveBank.storageOK=false;}$('bank-storage').textContent=waveBank.storageOK?'Library saved in this browser. Export a backup to keep a separate copy.':'Browser storage is unavailable. Export your library to keep these waves.';}
@@ -33,19 +34,66 @@ function triggerDrumHit(e,track,at,velocity=1){
  if(drum.voices.size>128){const oldest=drum.voices.values().next().value;try{oldest.source.stop(e.context.currentTime);}catch(err){}drum.voices.delete(oldest);}
 }
 function renderDrumTransport(){
- $('beat-play').textContent=drum.playing?'■ Stop preview':drum.pending?'Cancel start':'▶ Solo preview';$('beat-play').setAttribute('aria-pressed',String(drum.playing));
+ $('beat-play').textContent=drum.playing?'Stop preview':drum.pending?'Cancel preview':'Solo preview';$('beat-play').setAttribute('aria-pressed',String(drum.playing));
  $('beat-bpm').value=drum.bpm;$('beat-swing').value=Math.round(drum.swing*100);$('beat-swing-value').textContent=`${Math.round(drum.swing*100)}%`;$('beat-volume').value=Math.round(drum.volume*100);$('beat-volume-value').textContent=`${Math.round(drum.volume*100)}%`;
  renderMeasureControls();
 }
 function drumStepCount(){return DrumDSP.stepsPerBar(drum.meter);}
-function clearDrumCursor(){drum.current=-1;$('beat-position').textContent=`M1 / ${drum.bars} · 01 / ${drumStepCount()}`;drumRows.forEach(row=>row.steps.forEach(button=>button.classList.toggle('is-current',false)));}
+function programIsPlaying() {
+  return $('program-play').getAttribute('aria-pressed') === 'true';
+}
+function paintDrumCursor() {
+  const count = drumStepCount();
+  const program = programIsPlaying();
+  let cursor = program ? null : jazzCursor;
+  if (drum.playing) {
+    cursor = drum.current < 0 ? null : { measure: Math.floor(drum.current / count) + 1, step: drum.current % count + 1, steps: count };
+  }
+  const position = $('beat-position');
+  position.classList.toggle('is-live', Boolean(cursor && !drum.playing));
+  if (!program) {
+    position.textContent = cursor
+      ? `${drum.playing ? 'Preview' : 'Jazz'} · Measure ${cursor.measure} · Step ${cursor.step}/${cursor.steps}`
+      : 'Ready';
+  }
+  Array.from($('beat-measure-pages').children).forEach((button, index) => {
+    if (cursor?.measure === index + 1) button.setAttribute('aria-current', 'true');
+    else button.removeAttribute('aria-current');
+  });
+  for (const cell of $('drum-sequencer').querySelectorAll('.is-current')) cell.classList.remove('is-current');
+  if (cursor?.measure !== drum.editBar + 1 || cursor.steps !== count) return;
+  const step = cursor.step - 1;
+  stepNumbers[step]?.classList.add('is-current');
+  for (const row of drumRows) row.steps[step]?.classList.add('is-current');
+}
+function followJazzCursor() {
+  if (drum.playing || programIsPlaying()) return;
+  const measure = jazzCursor?.measure;
+  if (drum.follow && measure && measure <= drum.bars && measure !== drum.editBar + 1) selectDrumMeasure(measure - 1, true);
+  else paintDrumCursor();
+}
+window.setJazzPlayhead = position => { jazzCursor = position; followJazzCursor(); };
+function clearDrumCursor() {
+  drum.current = -1;
+  paintDrumCursor();
+}
 function renderMeasureControls(){
  $('beat-measures').value=drum.bars;$('beat-meter').value=`${drum.meter.numerator}/${drum.meter.denominator}`;$('beat-follow').checked=drum.follow;
- $('beat-measure-label').textContent=`EDITING MEASURE ${drum.editBar+1} OF ${drum.bars}`;$('beat-chip').textContent=`${drum.bars} MEASURE${drum.bars===1?'':'S'} · ${drum.meter.numerator}/${drum.meter.denominator}`;
- $('beat-measure-prev').disabled=drum.editBar===0;$('beat-measure-next').disabled=drum.editBar===drum.bars-1;$('beat-copy-next').disabled=drum.bars>=8;
+ $('beat-copy-next').disabled=drum.bars>=8;
  $('beat-add-measure').disabled=drum.bars>=8;$('beat-add-measure').title=drum.bars>=8?'Eight measures maximum per beatMAP':'Append a blank measure and edit it';
  window.renderMeasureEditing?.();
- const pager=$('beat-measure-pages');pager.innerHTML='';for(let i=0;i<drum.bars;i++){const button=document.createElement('button');button.textContent=String(i+1);button.setAttribute('aria-label',`Edit measure ${i+1}`);button.setAttribute('aria-pressed',String(i===drum.editBar));button.addEventListener('click',()=>selectDrumMeasure(i));pager.append(button);}
+ const pager = $('beat-measure-pages');
+ if (pager.children.length !== drum.bars) {
+   pager.replaceChildren(...Array.from({ length: drum.bars }, (_, index) => {
+     const button = document.createElement('button');
+     button.textContent = String(index + 1);
+     button.setAttribute('aria-label', `Edit measure ${index + 1}`);
+     button.addEventListener('click', () => selectDrumMeasure(index));
+     return button;
+   }));
+ }
+ Array.from(pager.children).forEach((button, index) => button.setAttribute('aria-pressed', String(index === drum.editBar)));
+ paintDrumCursor();
 }
 function selectDrumMeasure(index,automatic=false){drum.editBar=clamp(index,0,drum.bars-1);if(!automatic)drum.follow=false;renderMeasureControls();renderDrumRows();window.refreshDrumPads?.();}
 function stashDrumMeasures(){window.stashBeatModifiers?.();const padKey=`${drum.meter.numerator}/${drum.meter.denominator}`,oldPads=drum.padStash.get(padKey)||[];drum.padStash.set(padKey,drum.pads.map((p,i)=>{const steps=oldPads[i]?[...oldPads[i]]:[];p.steps.forEach((v,j)=>steps[j]=v);return steps;}));const key=`${drum.meter.numerator}/${drum.meter.denominator}`,prior=drum.measureStash.get(key)||[];drum.measureStash.set(key,drum.tracks.map((track,i)=>{const steps=prior[i]?[...prior[i]]:[];track.steps.forEach((value,index)=>steps[index]=value);return steps;}));}
@@ -104,25 +152,84 @@ async function toggleDrums(){
 window.drumFrame=()=>{
  if(!drum.playing||!engine)return;const now=engine.context.currentTime;
  let current=null;while(drum.queue.length&&drum.queue[0].time<=now)current=drum.queue.shift().step;
- if(current!==null&&current!==drum.current){drum.current=current;const count=drumStepCount(),bar=Math.floor(current/count);$('beat-position').textContent=`M${bar+1} / ${drum.bars} · ${String(current%count+1).padStart(2,'0')} / ${count}`;if(drum.follow&&bar!==drum.editBar)selectDrumMeasure(bar,true);renderDrumRows();}
+ if (current === null || current === drum.current) return;
+ drum.current = current;
+ const bar = Math.floor(current / drumStepCount());
+ if (drum.follow && bar !== drum.editBar) selectDrumMeasure(bar, true);
+ else paintDrumCursor();
 };
 async function previewDrumHit(){
  const token=++drum.auditionToken;
  try{const e=await ensureAudio();if(token!==drum.auditionToken)return;triggerDrumHit(e,{...drum.tracks[drum.selected],mute:false},e.context.currentTime+.01,1);}
  catch(error){notice(error.message);}
 }
-function renderDrumRows(){drumRows.forEach((row,i)=>{const track=drum.tracks[i],offset=drum.editBar*drumStepCount();row.container.classList.toggle('selected',i===drum.selected);row.name.setAttribute('aria-pressed',String(i===drum.selected));row.mute.setAttribute('aria-pressed',String(track.mute));row.mute.textContent=track.mute?'OFF':'ON';row.mute.setAttribute('aria-label',`${track.mute?'Unmute':'Mute'} ${track.name}`);row.wave.value=track.waveId;row.steps.forEach((button,step)=>{const velocity=track.steps[offset+step];button.setAttribute('data-velocity',String(velocity));button.setAttribute('aria-pressed',String(velocity>0));button.setAttribute('aria-label',`${track.name}, measure ${drum.editBar+1}, step ${step+1}, ${velocity===0?'off':velocity===1?'accent':'hit'}`);button.classList.toggle('is-current',drum.current===offset+step);button.textContent=window.beatModifierLabel?.(track,offset+step)||(velocity===1?'•':'');button.title=track.modifiers?.[offset+step]?'Modifier: '+track.modifiers[offset+step]:'Click: off → hit → accent';});});}
+function renderDrumRows() {
+  const offset = drum.editBar * drumStepCount();
+  drumRows.forEach((row, index) => {
+    const track = drum.tracks[index];
+    row.container.classList.toggle('selected', index === drum.selected);
+    row.name.setAttribute('aria-pressed', String(index === drum.selected));
+    row.mute.setAttribute('aria-pressed', String(track.mute));
+    row.mute.textContent = track.mute ? 'Off' : 'On';
+    row.mute.setAttribute('aria-label', `${track.mute ? 'Unmute' : 'Mute'} ${track.name}`);
+    row.wave.value = track.waveId;
+    row.steps.forEach((button, step) => {
+      const velocity = track.steps[offset + step];
+      button.dataset.velocity = String(velocity);
+      button.setAttribute('aria-pressed', String(velocity > 0));
+      button.setAttribute('aria-label', `${track.name}, measure ${drum.editBar + 1}, step ${step + 1}, ${velocity === 0 ? 'off' : velocity === 1 ? 'accent' : 'hit'}`);
+      button.textContent = window.beatModifierLabel?.(track, offset + step) || (velocity === 1 ? '•' : '');
+      button.title = track.modifiers?.[offset + step] ? 'Modifier: ' + track.modifiers[offset + step] : 'Click: off → hit → accent';
+    });
+  });
+  paintDrumCursor();
+}
 const hitFields={pitch:{scale:1,format:v=>`${v} Hz`},decay:{scale:1000,format:v=>`${Math.round(v*1000)} ms`},sweep:{scale:1,format:v=>`${v} st`},noise:{scale:100,format:v=>`${Math.round(v*100)}%`},tone:{scale:1,format:v=>`${v} Hz`},level:{scale:100,format:v=>`${Math.round(v*100)}%`}};
 function renderHitShaper(){const track=drum.tracks[drum.selected];$('shaper-name').textContent=`${track.name} · ${waveBank.waves.find(w=>w.id===track.waveId)?.name||'Wave'}`;for(const [key,config]of Object.entries(hitFields)){$(`hit-${key}`).value=key==='pitch'?track[key]:Math.round(track[key]*config.scale);$(`hit-${key}-value`).textContent=config.format(track[key]);}window.renderDrumNotes?.();renderDrumRows();}
 function buildDrumRows(){
- const grid=$('drum-sequencer');grid.innerHTML='';drumRows.length=0;const count=drumStepCount(),columns=`110px 150px 36px repeat(${count},minmax(24px,1fr))`;
- grid.style.minWidth=`${Math.max(700,330+count*29)}px`;
- const heading=document.createElement('div');heading.className='step-heading';heading.style.gridTemplateColumns=columns;const caption=document.createElement('span');caption.textContent='SELECT A VOICE / SAVED WAVE';heading.append(caption);for(let step=0;step<count;step++){const label=document.createElement('span');label.textContent=String(step+1);heading.append(label);}grid.append(heading);
+ const grid = $('drum-sequencer'), count = drumStepCount();
+ grid.replaceChildren();
+ grid.style.setProperty('--steps', count);
+ drumRows.length = 0;
+ stepNumbers.length = 0;
+ const heading = document.createElement('div'), caption = document.createElement('span'), numbers = document.createElement('div');
+ heading.className = 'step-heading';
+ caption.textContent = 'Drum / sound';
+ numbers.className = 'step-grid';
+ for (let step = 0; step < count; step++) {
+   const label = document.createElement('span');
+   label.textContent = String(step + 1);
+   stepNumbers.push(label);
+   numbers.append(label);
+ }
+ heading.append(caption, numbers);
+ grid.append(heading);
  drum.tracks.forEach((track,i)=>{
-  const row=document.createElement('div');row.className='drum-row';row.style.gridTemplateColumns=columns;const name=document.createElement('button');name.className='drum-name';name.textContent=track.name;name.setAttribute('aria-label',`Shape ${track.name}`);name.addEventListener('click',()=>{drum.selected=i;renderHitShaper();});row.append(name);
-  const wave=document.createElement('select');wave.setAttribute('aria-label',`${track.name} waveform`);fillWaveSelect(wave,track.waveId);wave.addEventListener('change',()=>{track.waveId=wave.value;drum.selected=i;renderHitShaper();});row.append(wave);
-  const mute=document.createElement('button');mute.className='track-mute';mute.addEventListener('click',()=>{track.mute=!track.mute;renderDrumRows();});row.append(mute);
-  const steps=[];for(let step=0;step<count;step++){const button=document.createElement('button');button.className=`step-button${step%(drum.meter.denominator===8?2:4)===0?' group-start':''}`;button.title='Click: off → hit → accent';button.addEventListener('click',event=>{const at=drum.editBar*count+step;if(window.paintBeatModifier?.(track,at)){renderDrumRows();return;}track.steps[at]=event.shiftKey?1:track.steps[at]===0?.5:track.steps[at]===.5?1:0;renderDrumRows();});row.append(button);steps.push(button);}
+  const row = document.createElement('div'), controls = document.createElement('div'), cells = document.createElement('div');
+  row.className = 'drum-row';
+  controls.className = 'drum-row-controls';
+  cells.className = 'step-grid';
+  const name=document.createElement('button');name.className='drum-name';name.textContent=track.name;name.setAttribute('aria-label',`Shape ${track.name}`);name.addEventListener('click',()=>{drum.selected=i;renderHitShaper();});
+  const wave=document.createElement('select');wave.setAttribute('aria-label',`${track.name} waveform`);fillWaveSelect(wave,track.waveId);wave.addEventListener('change',()=>{track.waveId=wave.value;drum.selected=i;renderHitShaper();});
+  const mute=document.createElement('button');mute.className='track-mute';mute.addEventListener('click',()=>{track.mute=!track.mute;renderDrumRows();});
+  const steps = Array.from({ length: count }, (_, step) => {
+    const button = document.createElement('button');
+    button.className = 'step-button';
+    button.classList.toggle('group-start', step % (drum.meter.denominator === 8 ? 2 : 4) === 0);
+    button.dataset.step = step + 1;
+    button.addEventListener('click', event => {
+      const at = drum.editBar * count + step;
+      if (!window.paintBeatModifier?.(track, at)) {
+        const velocity = track.steps[at];
+        track.steps[at] = event.shiftKey ? 1 : velocity === 0 ? 0.5 : velocity === 0.5 ? 1 : 0;
+      }
+      renderDrumRows();
+    });
+    return button;
+  });
+  controls.append(name, wave, mute);
+  cells.append(...steps);
+  row.append(controls, cells);
   grid.append(row);drumRows.push({container:row,name,wave,mute,steps});
  });renderHitShaper();
 }
@@ -146,15 +253,14 @@ $('bank-undo').addEventListener('click',()=>{const removed=waveBank.removed;if(!
 $('bank-export').addEventListener('click',()=>downloadStudio(JSON.stringify({kind:'dot-wave-library',version:1,waves:waveBank.waves},null,2),'application/json','dot-wave-library.json'));
 $('bank-import').addEventListener('click',()=>$('bank-file').click());
 $('bank-file').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';if(!file)return;try{if(file.size>1500000)throw new Error('Library file is too large.');const incoming=WaveLibrary.validateBundle(JSON.parse(await file.text()));waveBank.waves=WaveLibrary.prepareImport(waveBank.waves,incoming,bankId).waves;saveBankStorage();renderBank();notice('Library imported. Existing waves were kept.');}catch(e){notice(e instanceof SyntaxError?'That file is not valid library JSON.':e.message);}});
-$('beat-play').addEventListener('click',toggleDrums);$('beat-stop').addEventListener('click',stopDrumMachine);$('hit-preview').addEventListener('click',previewDrumHit);
+$('beat-play').addEventListener('click',toggleDrums);$('hit-preview').addEventListener('click',previewDrumHit);
 $('beat-bpm').addEventListener('change',e=>{const value=Number(e.target.value);if(window.setStudioTempo)return window.setStudioTempo(value);if(Number.isFinite(value)&&value>=40&&value<=240)drum.bpm=Math.round(value);renderDrumTransport();});
 $('beat-swing').addEventListener('input',e=>{drum.swing=+e.target.value/100;renderDrumTransport();});
 $('beat-volume').addEventListener('input',e=>{drum.volume=+e.target.value/100;if(drum.bus&&engine)smooth(drum.bus.gain,drum.volume);renderDrumTransport();});
 $('beat-measures').addEventListener('change',event=>{try{resizeDrumMeasures(+event.target.value,drum.meter);}catch(error){renderMeasureControls();notice(error.message);}});
 $('beat-meter').addEventListener('change',event=>{try{const [numerator,denominator]=event.target.value.split('/').map(Number);resizeDrumMeasures(drum.bars,{numerator,denominator});}catch(error){renderMeasureControls();notice(error.message);}});
-$('beat-measure-prev').addEventListener('click',()=>selectDrumMeasure(drum.editBar-1));$('beat-measure-next').addEventListener('click',()=>selectDrumMeasure(drum.editBar+1));
 $('beat-add-measure').addEventListener('click',addDrumMeasure);
-$('beat-follow').addEventListener('change',event=>{drum.follow=event.target.checked;renderMeasureControls();});
+$('beat-follow').addEventListener('change',event=>{drum.follow=event.target.checked;followJazzCursor();});
 $('beat-copy-next').addEventListener('click',()=>duplicateDrumMeasure());
 $('beat-preset').addEventListener('click',()=>applyPattern($('beat-style').value));$('beat-generate').addEventListener('click',()=>applyPattern($('beat-style').value==='blank'?'broken':$('beat-style').value,true));
 for(const [key,config]of Object.entries(hitFields))$(`hit-${key}`).addEventListener('input',e=>{if(key==='pitch'&&window.setDrumPitchFromInput){window.setDrumPitchFromInput(+e.target.value);return;}drum.tracks[drum.selected][key]=+e.target.value/config.scale;renderHitShaper();});

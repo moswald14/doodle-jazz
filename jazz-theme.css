@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light;
+  --paper: #f5f1e7;
+  --ink: #1a3d34;
+  --muted: #6f7b6c;
+  --line: #d8dccf;
+  --gold: #e3b560;
+  --soft: #e9ebdf;
+  --white: #fffdf6;
+  --mono: Consolas, 'Courier New', monospace;
+}
+
+:root.night {
+  color-scheme: dark;
+  --paper: #151f1b;
+  --ink: #d4dfcb;
+  --muted: #92a38a;
+  --line: #3a493c;
+  --soft: #263228;
+  --white: #202b23;
+}
