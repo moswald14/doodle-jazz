@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './beatmap/render-request.mjs';
+import { prepareBeatmap } from './beatmap/render-request.mjs?v=5';
+import { appliedBeatmapKey, compactBeatmapProject, loadBeatmapProjects } from './beatmap/live-project.mjs';
 
-const storageKey = 'doodle-jazz-applied-beatmap-v1';
+const sourceKey = 'doodle-jazz-drum-source-v1';
 
 export function createJazzBeatmapUI({ choose, preview, isStarted }) {
   const $ = id => document.getElementById(id);
@@ -9,101 +10,135 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
   const frame = $('beatmap-frame');
   const restore = $('beatmap-restore');
   const label = $('beatmap-status');
+  let { draft, applied } = loadBeatmapProjects();
+  let enabled = true;
+  try { enabled = localStorage.getItem(sourceKey) !== 'band'; } catch {}
   let generation = 0;
-  let pending = null, selected = null;
+  let queued = null, pending = null, selected = null, failed = false;
 
-  function tellEditor(message, busy = false) {
-    frame.contentWindow?.postMessage({ type: 'doodle-jazz-beatmap-status', message, busy }, location.origin);
+  function tellEditor(message) {
+    frame.contentWindow?.postMessage({ type: 'doodle-jazz-beatmap-status', message }, location.origin);
   }
 
-  function status(message, busy = false) {
+  function status(message) {
+    if (label.textContent === message) return;
     label.textContent = message;
-    tellEditor(message, busy);
+    tellEditor(message);
   }
 
-  function clear(message = isStarted() ? 'Band drums return on the next bar.' : 'Band drums selected.') {
-    generation++;
-    pending = null;
-    selected = null;
-    try { localStorage.removeItem(storageKey); } catch {}
-    choose(null);
-    restore.disabled = true;
-    status(message);
+  function paintSource() {
+    restore.textContent = enabled ? 'Return to band drums' : 'Use beatMAP drums';
   }
 
   $('beatmap-open').addEventListener('click', () => {
-    if (!frame.hasAttribute('src')) frame.src = new URL('./beatmap/index.html?v=4', import.meta.url).href;
+    if (!frame.hasAttribute('src')) frame.src = new URL('./beatmap/index.html?v=5', import.meta.url).href;
     if (!dialog.open) dialog.showModal();
   });
-  restore.addEventListener('click', () => clear());
-  frame.addEventListener('load', () => { if (label.textContent) tellEditor(label.textContent, Boolean(pending)); });
+  restore.addEventListener('click', () => {
+    enabled = !enabled;
+    try { localStorage.setItem(sourceKey, enabled ? 'beatmap' : 'band'); } catch {}
+    paintSource();
+    if (enabled) schedule();
+    else {
+      generation++;
+      queued = null;
+      selected = null;
+      failed = false;
+      choose(null, generation);
+      status(isStarted() ? 'Band drums return on the next bar.' : 'Band drums selected.');
+    }
+  });
+  frame.addEventListener('load', () => tellEditor(label.textContent));
   dialog.addEventListener('close', () => {
     preview(false);
     frame.contentWindow?.postMessage({ type: 'doodle-jazz-beatmap-close' }, location.origin);
   });
 
-  async function prepareSelection(project, program, ticket, save) {
-    try {
-      const prepared = await prepareBeatmap({ action: 'band', project, program });
-      if (ticket !== generation) return;
-      selected = prepared.name;
-      choose(prepared);
-      const message = isStarted() ? `${selected} replaces the drums on the next bar.` : `${selected} will play the drums when Jazz starts.`;
-      if (save) {
-        try {
-          // Keep the editable drum settings and the waves they reference, rather than rendered samples.
-          const { tracks, pads = [] } = project.pattern;
-          const waveIds = new Set([...tracks, ...pads].map(track => track.waveId));
-          const library = project.library.filter(wave => waveIds.has(wave.id));
-          localStorage.setItem(storageKey, JSON.stringify({ project: { ...project, library }, program }));
-        } catch {
-          status(message + ' This browser could only keep the selection for this session.');
-          return;
-        }
-      }
-      status(message);
-    } catch (error) {
-      if (ticket !== generation) return;
-      restore.disabled = selected === null;
-      status(error.message);
-    } finally {
-      if (ticket === generation) pending = null;
-    }
+  const prepare = (project, program) => prepareBeatmap({ action: 'band', project, program });
+
+  function install(prepared, revision) {
+    selected = prepared.name;
+    choose(prepared, revision);
   }
 
-  function select(project, program, save) {
-    const ticket = ++generation;
-    restore.disabled = false;
-    status('Preparing your beatMAP…', true);
-    pending = prepareSelection(project, program, ticket, save);
+  async function fallback(project, program, revision) {
+    const options = [applied, program && { project, program: false }, project && { project: null, program: false }];
+    for (const option of options) {
+      if (revision !== generation) return null;
+      if (option) {
+        try { return await prepare(option.project, option.program); } catch {}
+      }
+    }
+    return null;
+  }
+
+  async function flush() {
+    // Compile one revision at a time and pick up the newest draft after each render.
+    while (queued) {
+      const { project, revision } = queued;
+      queued = null;
+      const program = project?.editor?.jazzProgram === true;
+      try {
+        const prepared = await prepare(project, program);
+        if (revision !== generation) continue;
+        failed = false;
+        install(prepared, revision);
+        if (project) {
+          try {
+            applied = { project: compactBeatmapProject(project), program };
+            localStorage.setItem(appliedBeatmapKey, JSON.stringify(applied));
+          } catch {}
+        }
+        status(isStarted() ? `${prepared.name} updates on the next bar.` : `${prepared.name} is ready to play the drums.`);
+      } catch (error) {
+        if (revision !== generation) continue;
+        if (!selected) {
+          const prepared = await fallback(project, program, revision);
+          if (revision !== generation) continue;
+          if (prepared) install(prepared, revision);
+        }
+        failed = true;
+        status(`${error.message} ${selected ? 'Keeping the last playable beat.' : 'Band drums selected.'}`);
+      }
+    }
+    pending = null;
+  }
+
+  function schedule() {
+    if (!enabled) return;
+    if (!selected) status('Preparing beatMAP drums…');
+    queued = { project: draft, revision: ++generation };
+    pending ??= flush();
   }
 
   window.addEventListener('message', ({ source, origin, data }) => {
-    if (!dialog.open || origin !== location.origin || source !== frame.contentWindow) return;
-    if (data?.type === 'doodle-jazz-beatmap-preview' && typeof data.active === 'boolean') preview(data.active);
-    if (data?.type === 'doodle-jazz-beatmap-apply' && data.project && typeof data.program === 'boolean') {
-      select(data.project, data.program, true);
+    if (origin !== location.origin || source !== frame.contentWindow) return;
+    if (dialog.open && data?.type === 'doodle-jazz-beatmap-preview' && typeof data.active === 'boolean') preview(data.active);
+    if (data?.type === 'doodle-jazz-beatmap-edit' && data.project) {
+      draft = data.project;
+      schedule();
     }
   });
 
-  try {
-    const saved = JSON.parse(localStorage.getItem(storageKey));
-    if (saved?.project && typeof saved.program === 'boolean') select(saved.project, saved.program, false);
-  } catch {}
+  paintSource();
+  if (enabled) schedule();
+  else status('Band drums selected.');
 
   return {
-    clear,
     async ready() {
-      while (pending) await pending;
+      while (enabled && pending) await pending;
     },
-    playing(name) {
-      if (!pending && name === selected) status(`${name} is playing the Jazz drums.`);
+    error(message, revision) {
+      if (revision === generation) status(message);
     },
-    finished(name) {
-      if (!pending && name === selected) status(`${name} finished. The drum track is quiet.`);
+    playing(name, revision) {
+      if (!failed && revision === generation) status(`${name} is playing the drums. Edits take effect on the next bar.`);
+    },
+    finished(name, revision) {
+      if (!failed && revision === generation) status(`${name} finished. The drum track is quiet.`);
     },
     stopped() {
-      if (!pending && selected) status(`${selected} will play the drums when Jazz starts.`);
+      if (!failed && !pending && selected) status(`${selected} is ready to play the drums.`);
     }
   };
 }

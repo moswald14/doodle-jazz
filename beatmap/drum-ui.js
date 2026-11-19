@@ -2,7 +2,8 @@
 const BANK_KEY='doodle-jazz-beatmap-waves-v1';
 const waveBank={waves:WaveLibrary.stockWaves(),selected:'stock-sine',cache:new Map(),removed:null,storageOK:true};
 try{const saved=localStorage.getItem(BANK_KEY);if(saved)waveBank.waves=WaveLibrary.merge(waveBank.waves,WaveLibrary.validateBundle(JSON.parse(saved)));}catch(error){waveBank.storageOK=false;}
-const drum={tracks:DrumDSP.defaultTracks(),pads:DrumDSP.defaultPads(),padStash:new Map(),bpm:110,swing:0,bars:1,meter:{numerator:4,denominator:4},editBar:0,follow:true,measureStash:new Map(),volume:.45,selected:0,playing:false,pending:false,token:0,auditionToken:0,timer:null,nextTime:0,step:0,queue:[],current:-1,bus:null,context:null,cache:new Map(),voices:new Set()};
+const defaultDrumKit=DrumDSP.defaultKit();
+const drum={...defaultDrumKit.pattern,padStash:new Map(),editBar:0,follow:true,measureStash:new Map(),volume:defaultDrumKit.drumVolume,selected:0,playing:false,pending:false,token:0,auditionToken:0,timer:null,nextTime:0,step:0,queue:[],current:-1,bus:null,context:null,cache:new Map(),voices:new Set()};
 window.dotDrum=drum;window.dotWaveBank=waveBank;
 const drumRows=[];
 function selectedWave(){return waveBank.waves.find(w=>w.id===waveBank.selected)||waveBank.waves[0];}
@@ -157,7 +158,7 @@ $('beat-follow').addEventListener('change',event=>{drum.follow=event.target.chec
 $('beat-copy-next').addEventListener('click',()=>duplicateDrumMeasure());
 $('beat-preset').addEventListener('click',()=>applyPattern($('beat-style').value));$('beat-generate').addEventListener('click',()=>applyPattern($('beat-style').value==='blank'?'broken':$('beat-style').value,true));
 for(const [key,config]of Object.entries(hitFields))$(`hit-${key}`).addEventListener('input',e=>{if(key==='pitch'&&window.setDrumPitchFromInput){window.setDrumPitchFromInput(+e.target.value);return;}drum.tracks[drum.selected][key]=+e.target.value/config.scale;renderHitShaper();});
-function beatMapProject(){return {kind:'dot-drum-machine',version:3,name:$('beat-name').value.trim().slice(0,48)||'My beatMAP',library:waveBank.waves,pattern:DrumDSP.validatePattern(drumPattern()),drumVolume:drum.volume,program:window.drumProgramDraft?.(),editor:{measure:drum.editBar,voice:drum.selected,pad:+$('pad-edit-number').value,follow:drum.follow,chip:$('program-chip').checked}};}
+function beatMapProject(){return {kind:'dot-drum-machine',version:3,name:$('beat-name').value.trim().slice(0,48)||defaultDrumKit.name,library:waveBank.waves,pattern:DrumDSP.validatePattern(drumPattern()),drumVolume:drum.volume,program:window.drumProgramDraft?.(),editor:{measure:drum.editBar,voice:drum.selected,pad:+$('pad-edit-number').value,follow:drum.follow,chip:$('program-chip').checked,jazzProgram:$('program-live').checked}};}
 $('kit-save').addEventListener('click',async()=>{try{const project=beatMapProject(),name=project.name.replace(/[^a-z0-9_-]+/gi,'-').replace(/^-|-$/g,'').slice(0,55)||'my-map';await downloadStudio(JSON.stringify(project,null,2),'application/json',name+'.beatmap.json');$('beatmap-status').textContent='Saved “'+project.name+'” as an editable beatMAP. Load this file later to continue; saving again makes a new version.';}catch(e){$('beatmap-status').textContent=e.message;notice(e.message);}});
 $('kit-load').addEventListener('click',()=>$('kit-file').click());
 $('kit-file').addEventListener('change',async event=>{
@@ -166,6 +167,7 @@ $('kit-file').addEventListener('change',async event=>{
   if(file.size>1800000)throw new Error('beatMAP file is too large.');
   restoreBeatmap(JSON.parse(await file.text()));
   saveBeatmapDraft();
+  window.queueBeatmapEdit?.();
  }
  catch(e){const message=e instanceof SyntaxError?'That file is not valid beatMAP JSON.':e.message;$('beatmap-status').textContent=message;notice(message);}
 });
@@ -183,8 +185,8 @@ function restoreBeatmap(data) {
   for(const track of pattern.tracks)track.waveId=incoming.remap.get(track.waveId)||track.waveId;for(const pad of pattern.pads||[])if(pad.waveId)pad.waveId=incoming.remap.get(pad.waveId)||pad.waveId;
   stopAll();waveBank.waves=incoming.waves;waveBank.cache.clear();drum.cache.clear();drum.tracks=pattern.tracks;drum.pads=pattern.pads||DrumDSP.defaultPads(pattern.bars*DrumDSP.stepsPerBar(pattern.meter));drum.bpm=pattern.bpm;drum.swing=pattern.swing;drum.bars=pattern.bars;drum.meter=pattern.meter;drum.editBar=editor.measure;drum.follow=editor.follow;drum.measureStash.clear();drum.padStash.clear();window.clearBeatModifierStash?.();window.resetPadHistory?.();drum.volume=data.drumVolume;drum.selected=editor.voice;
   if(drum.bus&&engine)smooth(drum.bus.gain,drum.volume);
-  window.loadDrumProgram?.(program);$('beat-name').value=name.trim();$('pad-edit-number').value=String(editor.pad);$('program-chip').checked=editor.chip;$('beat-modifier').value='edit';window.showModifier?.();
-  if(drum.bars>1)$('beat-bars').value='0';saveBankStorage();buildDrumRows();renderBank();renderDrumTransport();clearDrumCursor();$('beat-status').textContent='beatMAP loaded. Edit any measure, pad, sound, or program; playback stays stopped.';$('beatmap-status').textContent='Opened “'+name.trim()+'”. Edit, then Save beatMAP to keep a new version.';
+  window.loadDrumProgram?.(program);$('beat-name').value=name.trim();$('pad-edit-number').value=String(editor.pad);$('program-chip').checked=editor.chip;$('program-live').checked=editor.jazzProgram===true;$('beat-modifier').value='edit';window.showModifier?.();
+  if(drum.bars>1)$('beat-bars').value='0';saveBankStorage();buildDrumRows();renderBank();renderDrumTransport();clearDrumCursor();$('beat-status').textContent='beatMAP loaded.';$('beatmap-status').textContent='Opened “'+name.trim()+'”. Edit, then Save beatMAP to keep a new version.';
 }
 $('beat-export').addEventListener('click',async()=>{try{const loop=$('beat-loop-export').checked,rendered=DrumDSP.renderPattern(signalsForTracks(),drum.tracks,{bpm:drum.bpm,swing:drum.swing,meter:drum.meter,bars:+$('beat-bars').value||drum.bars,rate:48000,gain:drum.volume,loop,pads:drum.pads});await downloadStudio(DrumDSP.encodeWav(rendered.samples,rendered.rate),'audio/wav',`dot-beat-${drum.bpm}bpm.wav`);$('beat-status').textContent=loop?'Exact-length loop exported with tails wrapped to the start, before EQ.':'Beat exported with hit tails, at drum level, before EQ and Master.';}catch(e){notice(e.message);}});
 buildDrumRows();renderBank();renderDrumTransport();

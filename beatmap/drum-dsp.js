@@ -58,6 +58,9 @@
    {id:'perc',name:'Perc',waveId:'stock-triangle',pitch:350,decay:.16,sweep:8,noise:.12,tone:6500,level:.4,mute:false,steps:steps([11],[3,15])}
   ];
  }
+ function defaultKit(){
+  return {name:'My beatMAP',drumVolume:.45,pattern:{tracks:defaultTracks(),pads:defaultPads(),bpm:110,swing:0,bars:1,meter:{numerator:4,denominator:4}}};
+ }
  function resizePattern(pattern,options={}){
   const current=validatePattern(pattern),bars=options.bars===undefined?current.bars:options.bars,nextMeter=validateMeter(options.meter===undefined?current.meter:options.meter);if(!Number.isInteger(bars)||bars<1||bars>8)throw new Error('Choose one to eight measures.');
   const oldCount=stepsPerBar(current.meter),newCount=stepsPerBar(nextMeter);
@@ -156,6 +159,6 @@
   for(let i=0;i<samples.length;i++){if(typeof samples[i]!=='number'||!Number.isFinite(samples[i]))throw new Error('Invalid WAV sample.');view.setInt16(44+i*2,Math.round(clamp(samples[i],-1,1)*32767),true);}
   return buffer;
  }
- const api={MODIFIERS,validateModifiers,modifiedTrack,hitEvents,STEPS,MAX_TRACKS,METERS,PAD_MAP,defaultPads,validatePads,padTrack,allTracks,nearestStep,validateMeter,stepsPerBar,patternLength,resizePattern,defaultTracks,validateTrack,validateBeat,validatePattern,renderHit,stepSeconds,renderPattern,encodeWav};
+ const api={MODIFIERS,validateModifiers,modifiedTrack,hitEvents,STEPS,MAX_TRACKS,METERS,PAD_MAP,defaultPads,validatePads,padTrack,allTracks,nearestStep,validateMeter,stepsPerBar,patternLength,resizePattern,defaultTracks,defaultKit,validateTrack,validateBeat,validatePattern,renderHit,stepSeconds,renderPattern,encodeWav};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.DrumDSP=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

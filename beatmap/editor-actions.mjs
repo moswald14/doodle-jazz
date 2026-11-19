@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './render-request.mjs';
+import { prepareBeatmap } from './render-request.mjs?v=5';
+import { compactBeatmapProject, loadBeatmapProjects } from './live-project.mjs';
 
 const controls = id => document.getElementById(id);
 const embedded = window.parent !== window;
-let draftTimer;
-const applyButtons = [];
+let draftTimer, queued = false, lastSound;
 
 if (embedded) {
+  controls('beat-jazz').hidden = false;
+  controls('program-live-setting').hidden = false;
   const transports = ['beat-play', 'program-play'].map(controls);
   let previewing = false;
   const watchPreview = new MutationObserver(() => {
@@ -22,24 +24,16 @@ globalThis.renderBeatmapProgram = gain => prepareBeatmap({
   action: 'program', project: beatMapProject(), gain
 });
 
-for (const [id, program] of [['beat-send-mix', false], ['program-song', true]]) {
-  const button = controls(id);
-  applyButtons.push(button);
-  button.disabled = !embedded;
-  if (!embedded) button.title = 'Open the editor from the Jazz room to replace the band’s drums.';
-  button.addEventListener('click', () => {
-    if (program && !checkDrumProgram()) return;
-    try {
-      const project = beatMapProject();
-      stopAll();
-      saveBeatmapDraft();
-      for (const control of applyButtons) control.disabled = true;
-      window.parent.postMessage({ type: 'doodle-jazz-beatmap-apply', project, program }, location.origin);
-    } catch (error) {
-      for (const control of applyButtons) control.disabled = false;
-      notice(error.message);
-    }
-  });
+function shareBeatmap(updateBand = true) {
+  if (!embedded) return;
+  try {
+    const project = compactBeatmapProject(beatMapProject());
+    const { name, pattern, drumVolume, library, program, editor } = project;
+    const sound = JSON.stringify([name, pattern, drumVolume, library, editor.jazzProgram && [program, editor.chip]]);
+    if (sound === lastSound) return;
+    if (updateBand) window.parent.postMessage({ type: 'doodle-jazz-beatmap-edit', project }, location.origin);
+    lastSound = sound;
+  } catch (error) { controls('beat-jazz-status').textContent = error.message; }
 }
 
 controls('program-midi').addEventListener('click', async () => {
@@ -72,27 +66,35 @@ window.addEventListener('message', ({ origin, source, data }) => {
   if (!embedded || origin !== location.origin || source !== window.parent || !data) return;
   if (data.type === 'doodle-jazz-beatmap-close') {
     stopAll();
+    shareBeatmap();
     saveBeatmapDraft();
   }
   if (data.type === 'doodle-jazz-beatmap-status' && typeof data.message === 'string') {
-    notice(data.message);
-    for (const control of applyButtons) control.disabled = data.busy === true;
+    controls('beat-jazz-status').textContent = data.message;
   }
 });
 
 try {
-  const draft = localStorage.getItem('doodle-jazz-beatmap-draft-v1');
-  if (draft) restoreBeatmap(JSON.parse(draft));
+  const { draft } = loadBeatmapProjects();
+  if (draft) restoreBeatmap(draft);
 } catch { notice('The previous draft could not be loaded. You can still open a saved beatMAP file.'); }
 
-function queueDraftSave() {
-  clearTimeout(draftTimer);
-  draftTimer = setTimeout(saveBeatmapDraft, 450);
+function queueBeatmapEdit() {
+  if (queued) return;
+  queued = true;
+  queueMicrotask(() => {
+    queued = false;
+    shareBeatmap();
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveBeatmapDraft, 450);
+  });
 }
+window.queueBeatmapEdit = queueBeatmapEdit;
 for (const event of ['input', 'change', 'click', 'keydown']) {
-  document.addEventListener(event, queueDraftSave, { passive: true });
+  document.addEventListener(event, queueBeatmapEdit, { passive: true });
 }
 addEventListener('pagehide', () => { saveBeatmapDraft(); stopAll(); });
+shareBeatmap(false);
 
 function paintPlayhead() {
   if (document.visibilityState === 'visible') window.drumFrame();

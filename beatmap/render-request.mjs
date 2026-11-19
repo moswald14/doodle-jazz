@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 export function prepareBeatmap(message) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./render-worker.mjs', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./render-worker.mjs?v=5', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => fail('The beatMAP took too long to prepare.'), 30000);
     function cleanup() {
       clearTimeout(timeout);

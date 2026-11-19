@@ -3,7 +3,7 @@ import './effects-dsp.js';
 import './amp-tone.js';
 import './studio-dsp.js';
 import './wave-library.js';
-import './drum-dsp.js';
+import './drum-dsp.js?v=5';
 import './drum-program.js';
 import './midi-io.js';
 import { BEATMAP_BYTE_LIMIT, BEATMAP_RATE, validateBandBeatmap } from './band-beatmap.mjs';
@@ -68,6 +68,7 @@ function synthesize(waves, bars, rate, gain, chip) {
 }
 
 export function prepareForBand(project, program) {
+  project ??= { ...DrumDSP.defaultKit(), library: WaveLibrary.stockWaves() };
   const { waves, order, bars } = plan(project, program);
   const chip = program && project.editor?.chip === true;
   const usable = synthesize(waves, bars, BEATMAP_RATE, project.drumVolume, chip);

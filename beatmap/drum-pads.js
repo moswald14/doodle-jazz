@@ -14,7 +14,7 @@ async function playDrumPad(number){
  if(track.mute){$('beat-status').textContent=track.name+' is muted. Turn its source voice on.';return;}
  if(drum.volume===0){$('beat-status').textContent='Raise Drum level to hear the pads.';return;}
  try{const e=await ensureAudio();if(token!==drum.auditionToken||labTabs.active!=='beat'||document.hidden)return;triggerDrumHit(e,track,e.context.currentTime,velocity);
-  if(padRecord.active&&drum.playing){const count=drum.bars*drumStepCount(),elapsed=Math.max(0,e.context.currentTime-drum.started),step=DrumDSP.nearestStep(elapsed,drum.bpm,drum.swing,count),cycleSeconds=count*60/drum.bpm/4;let cycle=Math.floor(elapsed/cycleSeconds);if(step===0&&elapsed%cycleSeconds>cycleSeconds/2)cycle++;pad.steps[step]=Math.max(pad.steps[step],velocity);if(cycle*count+step>=drum.scheduledStep)padRecord.skip.add('pad-'+number+':'+(cycle*count+step));refreshDrumPads();}
+  if(padRecord.active&&drum.playing){const count=drum.bars*drumStepCount(),elapsed=Math.max(0,e.context.currentTime-drum.started),step=DrumDSP.nearestStep(elapsed,drum.bpm,drum.swing,count),cycleSeconds=count*60/drum.bpm/4;let cycle=Math.floor(elapsed/cycleSeconds);if(step===0&&elapsed%cycleSeconds>cycleSeconds/2)cycle++;pad.steps[step]=Math.max(pad.steps[step],velocity);if(cycle*count+step>=drum.scheduledStep)padRecord.skip.add('pad-'+number+':'+(cycle*count+step));refreshDrumPads();window.queueBeatmapEdit?.();}
   $('beat-status').textContent=padRecord.active?'Recorded '+map.name+' · keep layering the loop.':map.name+' · '+(pad.waveId?'assigned waveform':'current voice');
  }catch(error){$('beat-status').textContent=error.message;}
 }

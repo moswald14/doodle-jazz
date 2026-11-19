@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank } from './jazz-core.mjs?v=4';
+import { DJ_NOTES, DJ_STYLES, DJRandom, djClamp, djMakeBank } from './jazz-core.mjs?v=5';
 import { djShuffleSettings } from './jazz-settings.mjs';
 import { createJazzCastUI } from './jazz-cast.mjs';
 import { createJazzBandUI } from './jazz-band-ui.mjs?v=4';
 import { createJazzNamingUI } from './jazz-name-ui.mjs?v=4';
-import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=4';
+import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=5';
 import { parseJazzDotVoice } from './jazz-dot-voices.mjs';
 import { JAZZ_DEFAULT_SETTINGS, validateJazzArrangement } from './jazz-radio-contract.mjs';
 import { chordReceipt, downloadReceipt, encodeJazzWave, loadLearnedProgressions, readLegacyProgressions, rememberNamedProgression, savePassage, showPassages, syncPassage } from './jazz-library.mjs?v=3';
@@ -44,13 +44,16 @@ import { tickAt } from './core.mjs';
   let nextShuffleAt = 3600, capturePending = false, chordHistory = [];
   let voiceBusy = false, lastVoiceAt = null, voiceError = null;
   const snapshots = new Map();
-  let selectedBeatmap = null, previewingBeatmap = false;
+  let drumSelection = { beatmap: null, beatmapRevision: 0 }, previewingBeatmap = false;
   const beatmap = createJazzBeatmapUI({
-    choose(prepared) {
-      selectedBeatmap = prepared;
-      node?.port.postMessage({ beatmap: prepared });
-      paintBand();
-      naming.playbackChanged();
+    choose(prepared, revision) {
+      const sourceChanged = Boolean(prepared) !== Boolean(drumSelection.beatmap);
+      drumSelection = { beatmap: prepared, beatmapRevision: revision };
+      node?.port.postMessage(drumSelection);
+      if (sourceChanged) {
+        paintBand();
+        naming.playbackChanged();
+      }
     },
     preview(active) {
       if (active === previewingBeatmap) return;
@@ -60,7 +63,7 @@ import { tickAt } from './core.mjs';
     isStarted: () => Boolean(node)
   });
   const naming = createJazzNamingUI({
-    getPlayback: () => ({ session: sessionToken, state, beatmap: Boolean(selectedBeatmap), info: state === 'playing' ? lastInfo : null }),
+    getPlayback: () => ({ session: sessionToken, state, beatmap: Boolean(drumSelection.beatmap), info: state === 'playing' ? lastInfo : null }),
     getSnapshot: () => new Promise((resolve, reject) => {
       if (!node || state !== 'playing') { reject(new Error('Play Jazz before naming this set.')); return; }
       const id = crypto.randomUUID();
@@ -87,7 +90,7 @@ import { tickAt } from './core.mjs';
   const getStation = () => ({
     running: state === 'playing',
     info: lastInfo,
-    beatmap: Boolean(selectedBeatmap),
+    beatmap: Boolean(drumSelection.beatmap),
     voice: prefs.voice,
     learning: { patterns: favoriteProgressions.length, likes: favoriteProgressions.reduce((sum, entry) => sum + entry.weight, 0) },
     playerVoices: { parts: assignments },
@@ -252,7 +255,7 @@ import { tickAt } from './core.mjs';
     });
     if (!context) {
       $('track-name').textContent = DJ_STYLES[prefs.style].name;
-      $('track-info').textContent = 'Piano, upright bass & brushes';
+      $('track-info').textContent = 'Piano, upright bass & drums';
       $('chord').textContent = DJ_NOTES[DJ_STYLES[prefs.style].tonic] + (prefs.style === 'bossa' ? 'm9' : prefs.style === 'blues' ? '9' : 'maj9');
     }
   }
@@ -298,8 +301,8 @@ import { tickAt } from './core.mjs';
       naming.receive(info);
       return;
     }
-    if (info.beatmapError) { beatmap.clear(info.beatmapError); return; }
-    if (info.beatmapApplied) { beatmap.playing(info.beatmapApplied); return; }
+    if (info.beatmapError) { beatmap.error(info.beatmapError, info.beatmapRevision); return; }
+    if (info.beatmapApplied) { beatmap.playing(info.beatmapApplied, info.beatmapRevision); return; }
     if (info.sceneApplied) {
       if (info.sceneApplied === pendingShuffle) {
         pendingShuffle = null; pendingChange = false;
@@ -320,7 +323,9 @@ import { tickAt } from './core.mjs';
     naming.receive(info);
     const previouslyPlaying = lastInfo;
     lastInfo = info;
-    if (info.beatmapFinished && !previouslyPlaying?.beatmapFinished) beatmap.finished(info.beatmapName);
+    if (info.beatmapFinished && (!previouslyPlaying?.beatmapFinished || previouslyPlaying.beatmapRevision !== info.beatmapRevision)) {
+      beatmap.finished(info.beatmapName, info.beatmapRevision);
+    }
     if (!previouslyPlaying || previouslyPlaying.set !== info.set) naming.playbackChanged();
     if (chordHistory.at(-1)?.index !== info.chordIndex) {
       chordHistory.push({
@@ -368,7 +373,7 @@ import { tickAt } from './core.mjs';
       await ctx.resume();
       if (token !== sessionToken) return;
       if (!ctx.audioWorklet) throw new Error('Open the HTTPS address for Doodle Jazz, then press Play.');
-      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs?v=4', import.meta.url));
+      await ctx.audioWorklet.addModule(new URL('./jazz-worklet.mjs?v=5', import.meta.url));
       if (token !== sessionToken) return;
       if (!bank && parts.some(part => assignments[part])) {
         try { bank = await prepareBank(assignments); }
@@ -378,7 +383,7 @@ import { tickAt } from './core.mjs';
       if (token !== sessionToken) return;
       bank ||= djMakeBank();
       node = new AudioWorkletNode(ctx, 'doodle-jazz', { numberOfInputs: 0, numberOfOutputs: 1,
-        outputChannelCount: [2], processorOptions: { bank, beatmap: selectedBeatmap, config: {
+        outputChannelCount: [2], processorOptions: { bank, ...drumSelection, config: {
           ...validateJazzArrangement(prefs), seed, style: prefs.style, tempo: prefs.tempo, swing: prefs.swing / 100, favoriteProgressions
         } } });
       node.port.onmessage = e => receive(e.data, token);

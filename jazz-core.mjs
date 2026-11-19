@@ -429,11 +429,15 @@ class DJRenderer {
     this.pendingBeatmap = undefined;
     this.beatmap = null;
     this.beatmapBar = 0;
+    this.beatmapRevision = 0;
   }
   configure(data) {
     if (Object.hasOwn(data, 'beatmap')) {
-      try { this.pendingBeatmap = data.beatmap === null ? null : validateBandBeatmap(data.beatmap); }
-      catch { this.notify({ beatmapError: 'This beatMAP could not be played.' }); }
+      const revision = data.beatmapRevision ?? 0;
+      try {
+        const map = data.beatmap === null ? null : validateBandBeatmap(data.beatmap);
+        this.pendingBeatmap = { map, revision };
+      } catch { this.notify({ beatmapError: 'This beatMAP could not be played.', beatmapRevision: revision }); }
     }
     if (data.bank) {
       const bank = data.bank;
@@ -497,15 +501,22 @@ class DJRenderer {
     this.maxVoices = Math.max(this.maxVoices, this.voices.length);
   }
   render(left, right) {
+    const fadeFrames = this.rate * 0.005;
     for (let i = 0; i < left.length; i++, this.frame++) {
       if (this.frame >= this.nextBar) {
         if (this.pendingBank) { this.bank = this.pendingBank; this.pendingBank = null; }
         if (this.pendingBeatmap !== undefined) {
-          if (this.pendingBeatmap || this.beatmap) this.voices = this.voices.filter(voice => voice.role !== 'drums');
-          this.beatmap = this.pendingBeatmap;
+          const { map, revision } = this.pendingBeatmap;
+          const prior = this.beatmap;
+          if (map || prior) this.voices = this.voices.filter(voice => voice.role !== 'drums');
+          // Edits to the groove keep their place unless the measure order changes or the program ends.
+          const sameRoute = map && prior && map.loop === prior.loop && map.order.length === prior.order.length
+            && map.order.every((measure, index) => measure === prior.order[index]);
+          if (!sameRoute || this.beatmapBar >= map.order.length) this.beatmapBar = 0;
+          this.beatmap = map;
+          this.beatmapRevision = revision;
           this.pendingBeatmap = undefined;
-          this.beatmapBar = 0;
-          if (this.beatmap) this.notify({ beatmapApplied: this.beatmap.name });
+          if (map) this.notify({ beatmapApplied: map.name, beatmapRevision: revision });
         }
         if (this.pendingScene) {
           this.targets = { ...this.targets, ...this.pendingScene.levels };
@@ -529,6 +540,7 @@ class DJRenderer {
           const measure = map.order[this.beatmapBar];
           bar.events = bar.events.filter(event => event.role !== 'drums');
           bar.info.beatmapName = map.name;
+          bar.info.beatmapRevision = this.beatmapRevision;
           if (measure === undefined) {
             bar.info.beatmapFinished = true;
             if (this.info?.beatmapMeasure) this.voices = this.voices.filter(voice => voice.role !== 'drums');
@@ -571,10 +583,10 @@ class DJRenderer {
       this.levels.piano += (this.targets.piano - this.levels.piano) * 0.002;
       this.levels.bass += (this.targets.bass - this.levels.bass) * 0.002;
       this.levels.drums += (this.targets.drums - this.levels.drums) * 0.002;
-      const toBar = this.nextBar - this.frame, fadeFrames = this.rate * 0.005;
+      const toBar = this.nextBar - this.frame;
       // Fade the outgoing drum tails before changing sources at the bar line.
       const fadeDrums = toBar < fadeFrames && (
-        this.pendingBeatmap !== undefined && (this.pendingBeatmap || this.beatmap) ||
+        this.pendingBeatmap && (this.pendingBeatmap.map || this.beatmap) ||
         this.beatmap && !this.beatmap.loop && this.beatmapBar === this.beatmap.order.length && this.info.beatmapMeasure
       );
       const drumGain = this.levels.drums * (fadeDrums ? toBar / fadeFrames : 1);
