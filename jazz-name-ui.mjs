@@ -8,6 +8,7 @@ export function createJazzNamingUI({ getSnapshot, getPlayback, applyResult, reme
   try { client = new JazzNamingClient(); } catch { client = new JazzNamingClient({ storage: { getItem() { return null; }, setItem() { throw new Error(); } } }); }
   let working = false, disposed = false, timer, sourceSession = null, appliedId = null, playingPartId = null, lastPlaybackState = 'idle', learnedId = null;
   const message = (text, bad = false) => { if (disposed) return; $('naming-status').textContent = text; $('naming-status').classList.toggle('error', bad); };
+  const returnToDrums = 'Your title and beat are saved. Choose Return to band drums to use the named beat.';
   const provider = () => wallets.get($('naming-wallet').value)?.provider;
   const addWallet = (id, name, wallet) => {
     if (!wallet?.request || wallets.has(id) || wallets.size >= 12) return;
@@ -33,7 +34,8 @@ export function createJazzNamingUI({ getSnapshot, getPlayback, applyResult, reme
     $('naming-resume').disabled = working;
     $('naming-retry').hidden = q?.status !== 'retry'; $('naming-retry').disabled = working || !client.configuration?.ready;
     $('naming-recover').hidden = !q || !['sending', 'uncertain'].includes(q.status);
-    $('naming-apply').disabled = working || !q?.result || !playback.info;
+    $('naming-apply').disabled = working || !q?.result || !playback.info || playback.beatmap;
+    $('naming-apply').title = playback.beatmap ? 'Choose Return to band drums first.' : '';
     if (q) {
       $('naming-amount').textContent = formatPepeUnits(q.amount) + ' PEPE';
       $('naming-recipient').textContent = q.recipient;
@@ -59,7 +61,8 @@ export function createJazzNamingUI({ getSnapshot, getPlayback, applyResult, reme
       });
     }
     if (q?.result && q.id !== appliedId) {
-      if (sourceSession !== null && sourceSession === p.session && p.info?.set === q.context.set && p.info?.seed === q.context.seed) {
+      if (p.beatmap) message(returnToDrums);
+      else if (sourceSession !== null && sourceSession === p.session && p.info?.set === q.context.set && p.info?.seed === q.context.seed) {
         applyResult(q.id, q.result, p.info); appliedId = q.id; message('Your title is ready. The new beat will join on the next bar.');
       } else message('Your title and beat are saved. Choose Apply beat to add it to the set you are playing.');
     }
@@ -91,7 +94,7 @@ export function createJazzNamingUI({ getSnapshot, getPlayback, applyResult, reme
   $('naming-check-hash').addEventListener('click', () => void act(async () => { await client.check($('naming-recovery-hash').value.trim()); message(client.receipt.message); maybeApply(); }));
   $('naming-apply').addEventListener('click', () => {
     const p = getPlayback(), q = client.receipt;
-    if (!q?.result || !p.info) return;
+    if (!q?.result || !p.info || p.beatmap) return;
     applyResult(q.id, q.result, p.info); appliedId = q.id; message('The saved beat will join this set on its next bar.');
   });
   $('naming-download').addEventListener('click', () => {
@@ -125,8 +128,15 @@ export function createJazzNamingUI({ getSnapshot, getPlayback, applyResult, reme
     },
     receive(info) {
       if (info.partApplied) { playingPartId = info.partApplied; message('The new beat is playing.'); return true; }
-      if (info.partRejected) { appliedId = null; message('The set changed. Your title and beat are saved; choose Apply beat when you are ready.'); return true; }
-      if (playingPartId && !info.namedTitle) { playingPartId = null; message('A fresh set is playing. Your title and beat are saved; choose Apply beat to use them again.'); }
+      if (info.partRejected) {
+        appliedId = null;
+        message(info.reason === 'BEATMAP_ACTIVE' ? returnToDrums : 'The set changed. Your title and beat are saved; choose Apply beat when you are ready.');
+        return true;
+      }
+      if (playingPartId && !info.namedTitle) {
+        playingPartId = null;
+        message(getPlayback().beatmap ? returnToDrums : 'A fresh set is playing. Your title and beat are saved; choose Apply beat to use them again.');
+      }
       return false;
     },
     dispose() { disposed = true; clearTimeout(timer); window.removeEventListener('eip6963:announceProvider', announced); },

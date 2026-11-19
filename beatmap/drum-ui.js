@@ -32,7 +32,7 @@ function triggerDrumHit(e,track,at,velocity=1){
  if(drum.voices.size>128){const oldest=drum.voices.values().next().value;try{oldest.source.stop(e.context.currentTime);}catch(err){}drum.voices.delete(oldest);}
 }
 function renderDrumTransport(){
- $('beat-play').textContent=drum.playing?'■ Stop beat':drum.pending?'Cancel start':'▶ Play beat';$('beat-play').setAttribute('aria-pressed',String(drum.playing));
+ $('beat-play').textContent=drum.playing?'■ Stop preview':drum.pending?'Cancel start':'▶ Solo preview';$('beat-play').setAttribute('aria-pressed',String(drum.playing));
  $('beat-bpm').value=drum.bpm;$('beat-swing').value=Math.round(drum.swing*100);$('beat-swing-value').textContent=`${Math.round(drum.swing*100)}%`;$('beat-volume').value=Math.round(drum.volume*100);$('beat-volume-value').textContent=`${Math.round(drum.volume*100)}%`;
  renderMeasureControls();
 }

@@ -501,6 +501,7 @@ class DJRenderer {
       if (this.frame >= this.nextBar) {
         if (this.pendingBank) { this.bank = this.pendingBank; this.pendingBank = null; }
         if (this.pendingBeatmap !== undefined) {
+          if (this.pendingBeatmap || this.beatmap) this.voices = this.voices.filter(voice => voice.role !== 'drums');
           this.beatmap = this.pendingBeatmap;
           this.pendingBeatmap = undefined;
           this.beatmapBar = 0;
@@ -515,8 +516,8 @@ class DJRenderer {
         if (this.activePart && (!matches(this.activePart) || this.info?.beatPattern !== bar.info.beatPattern)) this.activePart = null;
         if (this.pendingPart) {
           const part = this.pendingPart; this.pendingPart = null;
-          if (matches(part)) {
-            this.beatmap = null;
+          if (this.beatmap) this.notify({ partRejected: part.requestId, reason: 'BEATMAP_ACTIVE' });
+          else if (matches(part)) {
             this.activePart = part;
             this.notify({ partApplied: part.requestId, set: bar.info.set });
           }
@@ -527,17 +528,19 @@ class DJRenderer {
           const map = this.beatmap;
           const measure = map.order[this.beatmapBar];
           bar.events = bar.events.filter(event => event.role !== 'drums');
-          for (const hit of map.bars[measure]) bar.events.push({
-            sample: map.samples[hit.sample], instrument: 'beatmap', role: 'drums',
-            time: hit.at * bar.duration, duration: 0, velocity: hit.level
-          });
-          bar.events.sort((a, b) => a.time - b.time);
           bar.info.beatmapName = map.name;
-          bar.info.beatmapMeasure = measure + 1;
-          this.beatmapBar++;
-          if (this.beatmapBar === map.order.length) {
-            if (map.loop) this.beatmapBar = 0;
-            else this.beatmap = null;
+          if (measure === undefined) {
+            bar.info.beatmapFinished = true;
+            if (this.info?.beatmapMeasure) this.voices = this.voices.filter(voice => voice.role !== 'drums');
+          } else {
+            for (const hit of map.bars[measure]) bar.events.push({
+              sample: map.samples[hit.sample], instrument: 'beatmap', role: 'drums',
+              time: hit.at * bar.duration, duration: 0, velocity: hit.level
+            });
+            bar.events.sort((a, b) => a.time - b.time);
+            bar.info.beatmapMeasure = measure + 1;
+            this.beatmapBar++;
+            if (map.loop && this.beatmapBar === map.order.length) this.beatmapBar = 0;
           }
         } else if (playedPart) {
           const seconds = 60 / bar.info.tempo, swing = bar.info.swing;
@@ -568,13 +571,21 @@ class DJRenderer {
       this.levels.piano += (this.targets.piano - this.levels.piano) * 0.002;
       this.levels.bass += (this.targets.bass - this.levels.bass) * 0.002;
       this.levels.drums += (this.targets.drums - this.levels.drums) * 0.002;
+      const toBar = this.nextBar - this.frame, fadeFrames = this.rate * 0.005;
+      // Fade the outgoing drum tails before changing sources at the bar line.
+      const fadeDrums = toBar < fadeFrames && (
+        this.pendingBeatmap !== undefined && (this.pendingBeatmap || this.beatmap) ||
+        this.beatmap && !this.beatmap.loop && this.beatmapBar === this.beatmap.order.length && this.info.beatmapMeasure
+      );
+      const drumGain = this.levels.drums * (fadeDrums ? toBar / fadeFrames : 1);
       let l = 0, r = 0;
       for (let j = this.voices.length - 1; j >= 0; j--) {
         const v = this.voices[j], at = Math.floor(v.position);
         const release = v.pitched ? djClamp(1 - (v.age - v.duration) / v.tail, 0, 1) : 1;
         if (at >= v.data.length - 1 || release <= 0) { this.voices.splice(j, 1); continue; }
         const fraction = v.position - at;
-        const value = (v.data[at] + (v.data[at + 1] - v.data[at]) * fraction) * v.gain * release * this.levels[v.role];
+        const gain = v.role === 'drums' ? drumGain : this.levels[v.role];
+        const value = (v.data[at] + (v.data[at + 1] - v.data[at]) * fraction) * v.gain * release * gain;
         l += value * v.left; r += value * v.right;
         v.age++; v.position += v.speed;
       }

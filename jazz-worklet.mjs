@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJRenderer } from './jazz-core.mjs?v=3';
+import { DJRenderer } from './jazz-core.mjs?v=4';
 import { JAZZ_CLIP_MAX_SECONDS } from './jazz-radio-contract.mjs';
 
 class DoodleJazzProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const { bank, config } = options.processorOptions;
+    const { bank, config, beatmap = null } = options.processorOptions;
     this.renderer = new DJRenderer(sampleRate, bank, config, info => this.update(info));
     this.ring = new Int16Array(Math.ceil(sampleRate * JAZZ_CLIP_MAX_SECONDS) * 2);
     this.written = 0;
     this.chords = [];
     this.capture = null;
+    if (beatmap) this.renderer.configure({ beatmap });
     this.port.onmessage = ({ data }) => {
       if (data.capture) this.beginCapture();
       else this.renderer.configure(data);

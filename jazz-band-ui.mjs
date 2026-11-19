@@ -19,6 +19,7 @@ export function createJazzBandUI({getSettings,getStation,changeSettings,action,r
   const meter=select('beats-per-bar','Beats per bar',JAZZ_METERS.map(n=>[n,`${n} beats`]));
   const phrase=select('phrase-bars','Phrase length',JAZZ_PHRASE_BARS.map(n=>[n,n==='genre'?'Follow the genre':`${n} bars`]));
   const beat=select('beat-pattern','Beat',Object.entries(JAZZ_BEAT_PATTERNS));
+  const mapOption=new Option('beatMAP','beatmap');mapOption.hidden=true;beat.add(mapOption);
   const key=select('key-root','Key',[['auto','Let the band choose'],...NOTES.map((name,index)=>[index,name])]);
   const suggest=make('button','Suggest a key');suggest.type='button';suggest.id='suggest-key';key.after(suggest);
   function toggle(id,label){const row=make('label'),control=make('input');row.className='band-toggle';control.type='checkbox';control.id=id;row.append(control,document.createTextNode(label));section.append(row);return control;}
@@ -67,11 +68,12 @@ export function createJazzBandUI({getSettings,getStation,changeSettings,action,r
   function render(station,settings){
     if(closed)return;
     const busy=externalBusy;
+    mapOption.hidden=!station.beatmap;
     const values = [[meter,settings.beatsPerBar??4],[phrase,settings.phraseBars??'genre'],
-      [beat,settings.beatPattern??'genre'],[key,settings.keyRoot??'auto']];
+      [beat,station.beatmap?'beatmap':settings.beatPattern??'genre'],[key,settings.keyRoot??'auto']];
     for (const [control, value] of values) {
-      if (document.activeElement !== control) control.value = String(value);
-      control.disabled = busy || working;
+      if (control === beat || document.activeElement !== control) control.value = String(value);
+      control.disabled = busy || working || control === beat && Boolean(station.beatmap);
     }
     beatOnly.checked=settings.beatOnly===true;favor.checked=settings.favorLikes!==false;
     for(const control of[beatOnly,favor,suggest,file,part,sound,assign,exportVoice])control.disabled=busy||working;

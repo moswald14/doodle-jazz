@@ -6,6 +6,18 @@ const embedded = window.parent !== window;
 let draftTimer;
 const applyButtons = [];
 
+if (embedded) {
+  const transports = ['beat-play', 'program-play'].map(controls);
+  let previewing = false;
+  const watchPreview = new MutationObserver(() => {
+    const active = transports.some(button => button.getAttribute('aria-pressed') === 'true');
+    if (active === previewing) return;
+    previewing = active;
+    window.parent.postMessage({ type: 'doodle-jazz-beatmap-preview', active }, location.origin);
+  });
+  for (const button of transports) watchPreview.observe(button, { attributeFilter: ['aria-pressed'] });
+}
+
 globalThis.renderBeatmapProgram = gain => prepareBeatmap({
   action: 'program', project: beatMapProject(), gain
 });
@@ -14,7 +26,7 @@ for (const [id, program] of [['beat-send-mix', false], ['program-song', true]]) 
   const button = controls(id);
   applyButtons.push(button);
   button.disabled = !embedded;
-  if (!embedded) button.title = 'Open the editor from the Jazz room to play with the band.';
+  if (!embedded) button.title = 'Open the editor from the Jazz room to replace the band’s drums.';
   button.addEventListener('click', () => {
     if (program && !checkDrumProgram()) return;
     try {
