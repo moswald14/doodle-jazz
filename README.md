@@ -2,9 +2,11 @@
 
 [Listen to Doodle Jazz](https://moswald14.github.io/doodle-jazz/).
 
-Doodle Jazz plays original jazz in your browser. Choose a genre, set the groove, or shuffle the trio. “I dig this!” saves eight chords and their audio to a shelf on this device. Import an editable Dot Wave sound to use it as a player voice.
+Doodle Jazz plays original jazz in your browser. The live groove and beatMAP are at the top. **Controls** at the bottom groups genre, arrangement, player voices, tempo, and mix.
 
-The band recalls a matching liked progression when a new set starts. With the owner's Doodlekeeper connection configured, the site also saves a signed chord record to Doodlechain. The recording stays on the browser shelf for replay.
+**I dig this!** saves eight chords, their recording, and the beatMAP that was playing when you clicked. Open **Saved grooves** to hear the original recording, download the editable beatMAP, or choose **Play with band** to hear the saved chord sequence with its drums again. **Bring back saved grooves** lets the band reuse recent rhythms when it recalls liked progressions.
+
+Pair the Keeper's Jazz-only HTTPS address in **Doodlechain connection**. The Keeper signs the chord timeline, editable beatMAP, and recording digest as one receipt. The original recording stays on the browser shelf. When the Keeper is unreachable, the shelf keeps the passage for signing later.
 
 Jazz uses beatMAP for its drums. Expand **Edit beatMAP** below the player to see the current measure and step. **Follow playhead** moves the grid with the music. Pick a measure to keep editing it while the measure buttons show where Jazz is playing. Edits go live at the next bar and follow the trio's tempo and bar length.
 

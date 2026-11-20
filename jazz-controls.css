@@ -1,0 +1,87 @@
+.controls-link { font-size: 11px; letter-spacing: .02em; color: var(--ink); text-underline-offset: 3px; }
+.masthead .wordmark { margin: 0; font-family: inherit; }
+main { padding-top: 12px; }
+.transport > #mute { flex: none; }
+.groove-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+.groove-actions p { margin: 0 0 0 6px; color: var(--muted); font-size: 12px; }
+.groove-actions button, .groove-shelf button, #jazz-controls .jazz-control-heading button {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px 12px;
+  background: var(--white);
+  color: var(--ink);
+  font: 12px 'Segoe UI', Arial, sans-serif;
+}
+.groove-actions #dig-this { border-color: var(--gold); background: var(--gold); color: #292314; font-weight: 600; }
+.groove-actions #dig-this:disabled { opacity: .65; cursor: default; }
+.groove-shelf { margin: -8px 0 22px; }
+.groove-shelf details, .jazz-playback-options { max-width: none; text-align: left; }
+.groove-shelf details + details { border-top: 1px solid var(--line); }
+.groove-shelf summary, .jazz-playback-options summary { padding: 10px 0; color: var(--ink); font-size: 13px; font-weight: 600; }
+.groove-shelf #library-status:empty, .groove-shelf .chord-trail:empty { display: none; }
+.groove-shelf #saved-chords article { padding: 12px 0; }
+.groove-shelf #saved-chords .jazz-tool-actions { flex-wrap: wrap; gap: 6px; }
+.groove-shelf #saved-chords button { margin: 0; }
+.groove-shelf .saved-passage h3 { font: 17px Georgia, serif; }
+.groove-shelf .chord-trail { font: 14px/1.6 Georgia, serif; color: var(--ink); overflow-wrap: anywhere; }
+.chain-connection form { padding: 4px 0; }
+.chain-connection label { display: block; margin-bottom: 6px; font-size: 12px; }
+.chain-connection form > div { display: flex; gap: 7px; }
+.chain-connection input { width: min(100%, 410px); min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 7px; background: var(--white); color: var(--ink); }
+#doodlechain-status { color: var(--muted); }
+.jazz-service { margin: 22px 0; }
+
+#jazz-controls {
+  margin: 24px 0 10px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--white);
+  scroll-margin-top: 16px;
+}
+.jazz-control-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+#jazz-controls-title { margin: 0; font: 23px Georgia, serif; }
+#jazz-controls .section-heading { margin: 16px 0 8px; }
+#jazz-controls .section-heading h2, #jazz-controls h3 { margin: 0 0 8px; font: 16px Georgia, serif; }
+#jazz-controls #shuffle-info { color: var(--muted); font-size: 12px; }
+#jazz-controls #shuffle-info:empty { display: none; }
+#jazz-controls .styles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+#jazz-controls .style { min-height: 38px; padding: 8px; }
+#jazz-controls .style strong { font: 600 12px 'Segoe UI', Arial, sans-serif; }
+#jazz-controls .band-controls, #jazz-controls .band-voices { border: 0; padding: 0; margin: 16px 0; }
+#jazz-controls .band-control-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 8px 0; }
+#jazz-controls .band-control-grid select { min-height: 35px; padding: 5px; }
+#jazz-controls .band-toggle { display: inline-flex; margin: 6px 14px 6px 0; }
+#jazz-controls .band-controls p { margin: 5px 0; }
+#jazz-controls .band-controls p:empty { display: none; }
+.jazz-playback-options { border-block: 1px solid var(--line); }
+.jazz-playback-options #radio-tools { margin: 0; }
+.jazz-playback-options #radio-tools .jazz-tool { padding: 12px; }
+.jazz-slider-bank { padding-top: 16px; }
+.jazz-slider-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px 20px; }
+.jazz-slider { min-width: 0; }
+.jazz-slider .mix-head { gap: 6px; margin-bottom: 4px; }
+.jazz-slider .mix-head output { margin-left: auto; white-space: nowrap; font: 11px var(--mono); }
+.jazz-slider input { display: block; width: 100%; accent-color: var(--ink); }
+
+@media (min-width: 900px) {
+  #jazz-controls .styles { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  #jazz-controls { padding: 14px; }
+  #jazz-controls .band-control-grid, .jazz-slider-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #jazz-controls .style { min-height: 37px; padding: 6px; }
+  #jazz-controls .style-indicator { display: none; }
+}
+@media (max-width: 560px) {
+  #player .transport { gap: 8px; flex-wrap: nowrap; }
+  #player .transport-left { width: auto; flex-wrap: wrap; gap: 6px; }
+  #player .quiet-button { padding-inline: 8px; }
+  .groove-actions p { flex-basis: 100%; margin: 1px 0 0; }
+}

@@ -7,15 +7,13 @@ const NOTES=['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
 export function createJazzBandUI({getSettings,getStation,changeSettings,action,request}) {
   const $=id=>document.getElementById(id), make=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
   const section=make('section');section.id='band-controls';section.className='band-controls';section.setAttribute('aria-label','Rhythm and band memory');
-  section.append(make('h2','SET THE GROOVE'));
+  section.append(make('h3','Arrangement'));
   const grid=make('div');grid.className='band-control-grid';section.append(grid);
   function select(id,label,options) {
     const box=make('div'), caption=make('label',label), control=make('select');control.id=id;caption.htmlFor=id;
     for(const [value,text]of options){const option=make('option',text);option.value=String(value);control.append(option);}
     box.append(caption,control);grid.append(box);return control;
   }
-  const speed=$('tempo'), speedLabel=speed.closest('.feel').querySelector('label'), speedValue=$('tempo-value');
-  speedLabel.replaceChildren(document.createTextNode('Speed '),speedValue);speed.setAttribute('aria-label','Speed in beats per minute');grid.append(speed.closest('.feel'));
   const meter=select('beats-per-bar','Beats per bar',JAZZ_METERS.map(n=>[n,`${n} beats`]));
   const phrase=select('phrase-bars','Phrase length',JAZZ_PHRASE_BARS.map(n=>[n,n==='genre'?'Follow the genre':`${n} bars`]));
   const beat=select('beat-pattern','Beat',Object.entries(JAZZ_BEAT_PATTERNS));
@@ -23,10 +21,10 @@ export function createJazzBandUI({getSettings,getStation,changeSettings,action,r
   const key=select('key-root','Key',[['auto','Let the band choose'],...NOTES.map((name,index)=>[index,name])]);
   const suggest=make('button','Suggest a key');suggest.type='button';suggest.id='suggest-key';key.after(suggest);
   function toggle(id,label){const row=make('label'),control=make('input');row.className='band-toggle';control.type='checkbox';control.id=id;row.append(control,document.createTextNode(label));section.append(row);return control;}
-  const beatOnly=toggle('beat-only','Beat only · just the drums'), favor=toggle('favor-likes','Bring back progressions I like');
+  const beatOnly=toggle('beat-only','Beat only'), favor=toggle('favor-likes','Bring back saved grooves');
   const status=make('p');status.id='band-memory-status';status.setAttribute('role','status');section.append(status);
   const keyStatus=make('p');keyStatus.id='key-suggestion';keyStatus.setAttribute('role','status');section.append(keyStatus);
-  $('radio-tools').before(section);
+  $('jazz-arrangement').append(section);
   const change=patch=>{if(!closed&&!working&&!externalBusy)changeSettings(patch);};
   meter.addEventListener('change',()=>change({beatsPerBar:Number(meter.value)}));
   phrase.addEventListener('change',()=>change({phraseBars:phrase.value==='genre'?'genre':Number(phrase.value)}));
@@ -45,7 +43,7 @@ export function createJazzBandUI({getSettings,getStation,changeSettings,action,r
   const voiceHealth=make('p');voiceHealth.id='voice-check-status';voiceHealth.setAttribute('role','status');voiceTest.after(voiceHealth);
   voiceTest.addEventListener('click',()=>void run(async()=>{await action('voice-test');}));
   const voices=make('section');voices.className='band-voices';voices.setAttribute('aria-label','Dot Wave player voices');
-  voices.append(make('h2','GIVE THE PLAYERS A VOICE'),make('p','Export a sound or Sound Box from Dot Wave Studio and import it here. Keep the editable sound with your trio.'));
+  voices.append(make('h3','Player voices'));
   const tools=make('div');tools.className='jazz-tool-actions';
   const importLabel=make('label','Import sound file'),file=make('input');importLabel.className='voice-file';file.type='file';file.accept='application/json,.json';file.setAttribute('aria-label','Import Dot Wave sound file');importLabel.append(file);
   tools.append(importLabel);voices.append(tools);
@@ -55,7 +53,7 @@ export function createJazzBandUI({getSettings,getStation,changeSettings,action,r
   const sound=voiceSelect('dot-voice-choice','Sound',[['','Original trio voice']]);
   const assign=make('button','Give voice to player');assign.type='button';const exportVoice=make('button','Export player voice');exportVoice.type='button';choices.append(assign,exportVoice);voices.append(choices);
   const assigned=make('p');assigned.id='player-voices-status';voices.append(assigned);
-  const voiceMessage=make('p');voiceMessage.id='dot-voice-status';voiceMessage.setAttribute('role','status');voices.append(voiceMessage);section.after(voices);
+  const voiceMessage=make('p');voiceMessage.id='dot-voice-status';voiceMessage.setAttribute('role','status');voices.append(voiceMessage);$('jazz-voices').append(voices);
   let closed=false,working=false,externalBusy=false,candidates=[];
   function loadCandidates(value){const next=listJazzDotVoices(value);candidates=next;sound.replaceChildren();const original=make('option','Original trio voice');original.value='';sound.append(original);next.forEach((voice,index)=>{const o=make('option',voice.name);o.value=String(index);sound.append(o);});sound.value=next.length?'0':'';voiceMessage.textContent=`${next.length} sound${next.length===1?'':'s'} ready. Choose a player, then give it a voice.`;}
   async function run(fn){if(closed||working||externalBusy)return;working=true;render(getStation(),getSettings());try{await fn();}catch(e){if(!closed)voiceMessage.textContent=e.message||'The voice could not be saved. Your current band is unchanged.';}finally{working=false;if(!closed)render(getStation(),getSettings());}}

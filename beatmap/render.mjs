@@ -7,6 +7,7 @@ import './drum-dsp.js?v=5';
 import './drum-program.js';
 import './midi-io.js';
 import { BEATMAP_BYTE_LIMIT, BEATMAP_RATE, validateBandBeatmap } from './band-beatmap.mjs?v=6';
+import { compactBeatmapProject } from './live-project.mjs';
 
 const { DrumDSP, DrumProgram, MidiIO, WaveLibrary } = globalThis;
 const drumNotes = { kick: 36, snare: 38, hat: 42, perc: 45,
@@ -72,11 +73,19 @@ function synthesize(waves, bars, rate, gain, chip) {
 }
 
 export function prepareForBand(project, program) {
-  project ??= { ...DrumDSP.defaultKit(), library: WaveLibrary.stockWaves() };
-  const { waves, order, bars, stepOffsets } = plan(project, program);
+  project ??= {
+    ...DrumDSP.defaultKit(), library: WaveLibrary.stockWaves(), program: DrumProgram.draft(),
+    editor: { measure: 0, voice: 0, pad: 1, follow: true, chip: true, jazzProgram: false }
+  };
+  const { pattern, waves, order, bars, stepOffsets } = plan(project, program);
   const chip = program && project.editor?.chip === true;
   const usable = synthesize(waves, bars, BEATMAP_RATE, project.drumVolume, chip);
-  return validateBandBeatmap({ name: project.name, loop: !program || project.program.loop === true, order, stepOffsets, ...usable });
+  // Keep the editable recipe with the prepared audio so a capture can pin the audible revision.
+  const recipe = compactBeatmapProject({
+    ...project, kind: 'dot-drum-machine', version: 3, pattern, program: DrumProgram.draft(project.program),
+    editor: { ...project.editor, jazzProgram: program === true }
+  });
+  return validateBandBeatmap({ name: project.name, loop: !program || project.program.loop === true, order, stepOffsets, recipe, ...usable });
 }
 
 export function renderProgram(project, gain) {

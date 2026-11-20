@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJ_NOTES, djValidateFavoriteProgressions } from './jazz-core.mjs?v=2';
+import { DJ_NOTES, djValidateFavoriteProgressions } from './jazz-core.mjs?v=7';
 import { validateJazzProgression, validateJazzResult } from './jazz-name-contract.mjs?v=2';
-import { jazzSiteConnected, sendPhraseToDoodlechain } from './jazz-site.mjs?v=2';
+import { jazzChainConnected, sendPhraseToDoodlechain } from './jazz-site.mjs?v=3';
 
 const MAX_LIBRARY_BYTES = 64 * 1024 * 1024;
 const MAX_PASSAGES = 24;
@@ -65,6 +65,7 @@ function updateProgressions(memory, candidate, done, receiptId) {
       const key = entry => JSON.stringify([entry.style, entry.tonic, entry.chords]);
       const previous = entries.find(entry => key(entry) === key(candidate));
       if (previous?.part && !candidate.part) candidate.part = previous.part;
+      if (previous?.grooveId && !candidate.grooveId) candidate.grooveId = previous.grooveId;
       candidate.weight = Math.min(100, (previous?.weight || 0) + 1);
       const next = [candidate, ...entries.filter(entry => entry !== previous)].slice(0, 32);
       memory.put(next, 'progressions');
@@ -132,7 +133,9 @@ export function downloadReceipt(receipt) {
 }
 
 export async function savePassage(receipt, audio, candidate) {
-  const entry = { id: crypto.randomUUID(), receipt, audio, progression: candidate };
+  const id = crypto.randomUUID();
+  const progression = candidate && receipt.groove ? { ...candidate, grooveId: id } : candidate;
+  const entry = { id, receipt, audio, progression };
   return useLibrary('readwrite', (store, done, fail, transaction) => {
     const request = store.getAll();
     request.onsuccess = () => {
@@ -142,9 +145,16 @@ export async function savePassage(receipt, audio, candidate) {
         return;
       }
       store.add(entry);
-      updateProgressions(transaction.objectStore(MEMORY), candidate, progressions => done({ entry, progressions }));
+      updateProgressions(transaction.objectStore(MEMORY), progression, progressions => done({ entry, progressions }));
     };
   }, ['passages', MEMORY]);
+}
+
+export function loadSavedGroove(id) {
+  return useLibrary('readonly', (store, done) => {
+    const request = store.get(id);
+    request.onsuccess = () => done(request.result?.receipt.groove);
+  });
 }
 
 export async function syncPassage(entry) {
@@ -161,7 +171,7 @@ export async function syncPassage(entry) {
 
 let renderVersion = 0;
 
-export async function showPassages() {
+export async function showPassages(playGroove) {
   const version = ++renderVersion;
   const status = $('library-status');
   try {
@@ -195,6 +205,11 @@ export async function showPassages() {
         audio.src = URL.createObjectURL(entry.audio);
         const actions = document.createElement('div');
         actions.className = 'jazz-tool-actions';
+        if (entry.receipt.groove) {
+          const groove = document.createElement('h3');
+          groove.textContent = entry.receipt.groove.project.name;
+          card.append(groove);
+        }
         card.append(title, audio, actions);
         shelf.insertBefore(card, shelf.children[position] || null);
       }
@@ -211,11 +226,22 @@ export async function showPassages() {
       }
       button('Download audio', () => download(entry.audio, 'doodle-jazz-' + entry.id + '.wav'));
       button('Chord receipt', () => downloadReceipt(entry.receipt));
+      if (entry.receipt.groove) {
+        const play = button('Play with band', async () => {
+          play.disabled = true;
+          try { await playGroove(entry); }
+          catch (error) { status.textContent = error.message; }
+          finally { play.disabled = false; }
+        });
+        button('Download beatMAP', () => download(new Blob([JSON.stringify(entry.receipt.groove.project, null, 2)],
+          { type: 'application/json' }), 'doodle-jazz-' + entry.id + '.beatmap.json'));
+      }
       if (entry.signedReceipt) button('Doodlechain receipt', () => downloadReceipt(entry.signedReceipt));
-      if (jazzSiteConnected && entry.progression && !entry.learnedOnKeeper) {
+      const awaitingSignature = !entry.signedReceipt || (entry.progression && !entry.learnedOnKeeper);
+      if (jazzChainConnected && (entry.progression || entry.receipt.rhythmOnly) && awaitingSignature) {
         const sync = button(entry.signedReceipt ? 'Retry band memory' : 'Save to Doodlechain', async () => {
           sync.disabled = true;
-          try { await syncPassage(entry); await showPassages(); }
+          try { await syncPassage(entry); await showPassages(playGroove); }
           catch (error) { status.textContent = error.message; sync.disabled = false; }
         });
       }
@@ -223,7 +249,7 @@ export async function showPassages() {
         remove.disabled = true;
         try {
           await useLibrary('readwrite', store => store.delete(entry.id));
-          await showPassages();
+          await showPassages(playGroove);
         } catch {
           remove.disabled = false;
           status.textContent = 'This passage could not be removed.';

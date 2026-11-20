@@ -2,7 +2,7 @@
 /* Doodle Jazz. Original procedural composition and synthesized instruments. */
 import { validateJazzContext, validateJazzResult, validateJazzProgression } from './jazz-name-contract.mjs?v=2';
 import { DJ_GENRES, djGenreChart } from './jazz-genres.mjs';
-import { validateJazzArrangement } from './jazz-radio-contract.mjs';
+import { validJazzRequestId, validateJazzArrangement } from './jazz-radio-contract.mjs';
 import { BEATMAP_RATE, validateBandBeatmap } from './beatmap/band-beatmap.mjs?v=6';
 const DJ_NOTES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 const DJ_CHORDS = {
@@ -68,8 +68,17 @@ function djValidateFavoriteProgressions(input) {
     const weight = Object.hasOwn(entry, 'weight') ? entry.weight : 1;
     if (!Number.isInteger(weight) || weight < 1 || weight > 100) throw new Error('Invalid favorite Jazz weight.');
     return { style: entry.style, tonic: entry.tonic, chords: validateJazzProgression(entry.chords), weight,
-      ...(entry.part ? { part: validateJazzResult(entry.part) } : {}) };
+      ...(entry.part ? { part: validateJazzResult(entry.part) } : {}),
+      ...(validJazzRequestId(entry.grooveId) ? { grooveId: entry.grooveId } : {}) };
   });
+}
+
+function savedDrumSource(source) {
+  const map = validateBandBeatmap(source.map);
+  if (!validJazzRequestId(source.id) || !Number.isInteger(source.startIndex) || source.startIndex < 0 || source.startIndex >= map.order.length) {
+    throw new Error('Invalid saved Jazz groove.');
+  }
+  return { id: source.id, map, startIndex: source.startIndex };
 }
 
 // Small, reusable sample banks keep rendering work and memory bounded indefinitely.
@@ -161,6 +170,7 @@ class DJComposer {
     this.phrase = null; this.lastVoicing = [];
     this.favorite = null;
     this.recallNext = true;
+    this.requestedProgression = null;
   }
   configure(change) {
     const arrangement = validateJazzArrangement({ ...this.config, ...this.pending, ...change });
@@ -188,6 +198,7 @@ class DJComposer {
       if (this.config.keyRoot !== 'auto') this.tonic = this.config.keyRoot;
       this.motif = [...this.rng.pick(DJ_MOTIFS)];
       this.phrase = null; this.lastVoicing = []; this.favorite = null;
+      this.requestedProgression = change.playProgression || null;
     }
   }
   genreChart() {
@@ -214,8 +225,11 @@ class DJComposer {
     const recall = this.recallNext;
     this.recallNext = false;
     // The legacy random stream is untouched when no matching feedback exists.
-    if (!choices.length || (!recall && this.rng.next() >= 0.65)) return;
-    if (recall) this.favorite = choices[0];
+    if (this.requestedProgression) {
+      this.favorite = this.requestedProgression;
+      this.requestedProgression = null;
+    } else if (!choices.length || (!recall && this.rng.next() >= 0.65)) return;
+    else if (recall) this.favorite = choices[0];
     else {
       let position = this.rng.next() * choices.reduce((sum, entry) => sum + entry.weight, 0);
       this.favorite = choices.find(entry => (position -= entry.weight) < 0) || choices.at(-1);
@@ -427,6 +441,11 @@ class DJRenderer {
     this.pendingScene = null;
     this.pendingBank = null;
     this.pendingBeatmap = undefined;
+    this.baseBeatmap = null;
+    this.drumSource = null;
+    this.grooveMemory = new Map();
+    this.manualGroove = null;
+    this.skippedFavorite = null;
     this.beatmap = null;
     this.beatmapBar = 0;
     this.beatmapRevision = 0;
@@ -439,7 +458,14 @@ class DJRenderer {
       try {
         const map = data.beatmap === null ? null : validateBandBeatmap(data.beatmap);
         this.pendingBeatmap = { map, revision };
+        this.manualGroove = null;
       } catch { this.notify({ beatmapError: 'This beatMAP could not be played.', beatmapRevision: revision }); }
+    }
+    if (Array.isArray(data.grooveMemory) && data.grooveMemory.length <= 4) {
+      try {
+        const choices = data.grooveMemory.map(savedDrumSource);
+        this.grooveMemory = new Map(choices.map(source => [source.id, source]));
+      } catch { /* Keep the current drum sources when a memory update is invalid. */ }
     }
     if (data.bank) {
       const bank = data.bank;
@@ -454,7 +480,10 @@ class DJRenderer {
         if (this.pendingScene) this.pendingScene.levels[role] = this.targets[role];
       }
     }
-    if (data.composition) this.composer.configure(data.composition);
+    if (data.composition) {
+      if (data.composition.newSet) this.manualGroove = null;
+      this.composer.configure(data.composition);
+    }
     if (data.scene && typeof data.scene.id === 'string' && /^[a-z0-9-]{1,64}$/i.test(data.scene.id)) {
       const scene = data.scene, c = scene.composition, levels = scene.levels;
       if (c && Object.hasOwn(DJ_STYLES, c.style) && Number.isFinite(c.tempo) && c.tempo >= 55 && c.tempo <= 180
@@ -481,6 +510,39 @@ class DJRenderer {
         this.pendingPart = { requestId: part.requestId, targetSet: part.targetSet, targetSeed: part.targetSeed, result };
       } catch { this.notify({ partRejected: typeof part.requestId === 'string' ? part.requestId.slice(0, 64) : '', reason: 'SET_CHANGED_OR_INVALID' }); }
     }
+    if (data.playGroove) {
+      try {
+        const { source, progression: requested, tempo, swing, beatsPerBar, beatOnly = false } = data.playGroove;
+        const drumSource = savedDrumSource(source);
+        const [progression] = djValidateFavoriteProgressions([{ ...requested, grooveId: drumSource.id }]);
+        this.composer.configure({ newSet: true, playProgression: progression, style: progression.style,
+          tempo, swing, beatsPerBar, phraseBars: 8, keyRoot: progression.tonic, beatOnly });
+        this.manualGroove = drumSource;
+      } catch { this.notify({ grooveError: 'This saved groove could not start.' }); }
+    }
+  }
+  updateDrumTrack() {
+    const favorite = this.composer.favorite;
+    if (this.pendingBeatmap !== undefined) {
+      this.baseBeatmap = this.pendingBeatmap;
+      this.pendingBeatmap = undefined;
+      if (this.info) this.skippedFavorite = favorite;
+    }
+    const grooveId = favorite?.grooveId;
+    const remembered = grooveId && this.baseBeatmap?.map && favorite !== this.skippedFavorite
+      ? this.grooveMemory.get(grooveId) : null;
+    const manual = grooveId && this.manualGroove?.id === grooveId ? this.manualGroove : null;
+    const source = manual || remembered || this.baseBeatmap;
+    if (source === this.drumSource) return;
+    const map = source?.map || null, prior = this.beatmap;
+    if (map || prior) this.voices = this.voices.filter(voice => voice.role !== 'drums');
+    const sameRoute = map && prior && !source.id && !this.drumSource?.id && map.loop === prior.loop
+      && map.order.length === prior.order.length && map.order.every((measure, index) => measure === prior.order[index]);
+    if (!sameRoute || this.beatmapBar >= map.order.length) this.beatmapBar = source?.startIndex ?? 0;
+    this.drumSource = source;
+    this.beatmap = map;
+    this.beatmapRevision = source?.revision ?? 0;
+    if (map && !source.id) this.notify({ beatmapApplied: map.name, beatmapRevision: this.beatmapRevision });
   }
   trigger(e) {
     let data, speed = this.bank.rate / this.rate;
@@ -507,24 +569,12 @@ class DJRenderer {
     for (let i = 0; i < left.length; i++, this.frame++) {
       if (this.frame >= this.nextBar) {
         if (this.pendingBank) { this.bank = this.pendingBank; this.pendingBank = null; }
-        if (this.pendingBeatmap !== undefined) {
-          const { map, revision } = this.pendingBeatmap;
-          const prior = this.beatmap;
-          if (map || prior) this.voices = this.voices.filter(voice => voice.role !== 'drums');
-          // Edits to the groove keep their place unless the measure order changes or the program ends.
-          const sameRoute = map && prior && map.loop === prior.loop && map.order.length === prior.order.length
-            && map.order.every((measure, index) => measure === prior.order[index]);
-          if (!sameRoute || this.beatmapBar >= map.order.length) this.beatmapBar = 0;
-          this.beatmap = map;
-          this.beatmapRevision = revision;
-          this.pendingBeatmap = undefined;
-          if (map) this.notify({ beatmapApplied: map.name, beatmapRevision: revision });
-        }
         if (this.pendingScene) {
           this.targets = { ...this.targets, ...this.pendingScene.levels };
           this.notify({ sceneApplied: this.pendingScene.id }); this.pendingScene = null;
         }
         const bar = this.composer.nextBar();
+        this.updateDrumTrack();
         const matches = part => part.targetSet === bar.info.set && part.targetSeed === bar.info.seed;
         if (this.activePart && (!matches(this.activePart) || this.info?.beatPattern !== bar.info.beatPattern)) this.activePart = null;
         if (this.pendingPart) {
@@ -543,6 +593,7 @@ class DJRenderer {
           bar.events = bar.events.filter(event => event.role !== 'drums');
           bar.info.beatmapName = map.name;
           bar.info.beatmapRevision = this.beatmapRevision;
+          if (this.drumSource.id) bar.info.rememberedGrooveId = this.drumSource.id;
           if (measure === undefined) {
             bar.info.beatmapFinished = true;
             if (this.info?.beatmapMeasure) this.voices = this.voices.filter(voice => voice.role !== 'drums');
@@ -553,6 +604,7 @@ class DJRenderer {
             });
             bar.events.sort((a, b) => a.time - b.time);
             bar.info.beatmapMeasure = measure + 1;
+            bar.info.beatmapOrderIndex = this.beatmapBar;
             this.beatmapBar++;
             if (map.loop && this.beatmapBar === map.order.length) this.beatmapBar = 0;
           }
@@ -587,7 +639,8 @@ class DJRenderer {
       }
       if (this.frame >= this.nextBeatmapStep) {
         const steps = this.beatmapStepOffsets;
-        this.notify({ beatmapPlayhead: { measure: this.info.beatmapMeasure, step: ++this.beatmapStep, steps: steps.length } });
+        this.notify({ beatmapPlayhead: { measure: this.info.beatmapMeasure, step: ++this.beatmapStep, steps: steps.length,
+          ...(this.info.rememberedGrooveId ? { saved: true } : {}) } });
         this.nextBeatmapStep = this.beatmapStep < steps.length
           ? this.barStart + steps[this.beatmapStep] * this.barDuration * this.rate : Infinity;
       }

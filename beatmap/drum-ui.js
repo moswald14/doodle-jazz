@@ -53,15 +53,15 @@ function paintDrumCursor() {
   position.classList.toggle('is-live', Boolean(cursor && !drum.playing));
   if (!program) {
     position.textContent = cursor
-      ? `${drum.playing ? 'Preview' : 'Jazz'} · Measure ${cursor.measure} · Step ${cursor.step}/${cursor.steps}`
+      ? `${drum.playing ? 'Preview' : cursor.saved ? 'Saved groove' : 'Jazz'} · Measure ${cursor.measure} · Step ${cursor.step}/${cursor.steps}`
       : 'Ready';
   }
   Array.from($('beat-measure-pages').children).forEach((button, index) => {
-    if (cursor?.measure === index + 1) button.setAttribute('aria-current', 'true');
+    if (!cursor?.saved && cursor?.measure === index + 1) button.setAttribute('aria-current', 'true');
     else button.removeAttribute('aria-current');
   });
   for (const cell of $('drum-sequencer').querySelectorAll('.is-current')) cell.classList.remove('is-current');
-  if (cursor?.measure !== drum.editBar + 1 || cursor.steps !== count) return;
+  if (cursor?.saved || cursor?.measure !== drum.editBar + 1 || cursor.steps !== count) return;
   const step = cursor.step - 1;
   stepNumbers[step]?.classList.add('is-current');
   for (const row of drumRows) row.steps[step]?.classList.add('is-current');
@@ -69,7 +69,7 @@ function paintDrumCursor() {
 function followJazzCursor() {
   if (drum.playing || programIsPlaying()) return;
   const measure = jazzCursor?.measure;
-  if (drum.follow && measure && measure <= drum.bars && measure !== drum.editBar + 1) selectDrumMeasure(measure - 1, true);
+  if (drum.follow && !jazzCursor?.saved && measure && measure <= drum.bars && measure !== drum.editBar + 1) selectDrumMeasure(measure - 1, true);
   else paintDrumCursor();
 }
 window.setJazzPlayhead = position => { jazzCursor = position; followJazzCursor(); };

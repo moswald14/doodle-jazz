@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { DJRenderer } from './jazz-core.mjs?v=6';
+import { DJRenderer } from './jazz-core.mjs?v=7';
 import { JAZZ_CLIP_MAX_SECONDS } from './jazz-radio-contract.mjs';
 
 class DoodleJazzProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const { bank, config, beatmap = null, beatmapRevision = 0 } = options.processorOptions;
+    const { bank, config, beatmap = null, beatmapRevision = 0, grooveMemory = [] } = options.processorOptions;
     this.renderer = new DJRenderer(sampleRate, bank, config, info => this.update(info));
     this.ring = new Int16Array(Math.ceil(sampleRate * JAZZ_CLIP_MAX_SECONDS) * 2);
     this.written = 0;
     this.chords = [];
     this.capture = null;
-    if (beatmap) this.renderer.configure({ beatmap, beatmapRevision });
+    this.renderer.configure({ beatmap, beatmapRevision, grooveMemory });
     this.port.onmessage = ({ data }) => {
       if (data.capture) this.beginCapture();
       else this.renderer.configure(data);
@@ -28,7 +28,8 @@ class DoodleJazzProcessor extends AudioWorkletProcessor {
       const chord = {
         index: info.chordIndex, frame: Math.round(info.seconds * sampleRate), chord: info.chord,
         style: info.style, key: info.key, tonic: info.tonic, beatOnly: info.beatOnly, set: info.set,
-        root: info.chordRoot, quality: info.chordQuality
+        root: info.chordRoot, quality: info.chordQuality, beatmapOrderIndex: info.beatmapOrderIndex,
+        beatmapRevision: info.beatmapRevision, rememberedGrooveId: info.rememberedGrooveId
       };
       this.chords.push(chord);
       if (this.chords.length > 8) this.chords.shift();
@@ -46,7 +47,14 @@ class DoodleJazzProcessor extends AudioWorkletProcessor {
       return;
     }
     const chords = this.chords.slice(-5);
-    this.capture = { chords, start: chords[0].frame * 2, copied: 0 };
+    const { beatmap, info } = this.renderer, first = chords[0];
+    const sameBeatmap = first.beatmapRevision === info.beatmapRevision && first.rememberedGrooveId === info.rememberedGrooveId;
+    const groove = beatmap?.recipe ? {
+      format: 'doodle-jazz-groove-v1', project: beatmap.recipe, program: beatmap.recipe.editor?.jazzProgram === true,
+      startIndex: (sameBeatmap ? first.beatmapOrderIndex : info.beatmapOrderIndex) ?? 0,
+      tempo: info.tempo, swing: info.swing, beatsPerBar: info.beatsPerBar
+    } : null;
+    this.capture = { chords, groove, start: chords[0].frame * 2, copied: 0 };
   }
   finishCapture() {
     const capture = this.capture;
@@ -64,7 +72,7 @@ class DoodleJazzProcessor extends AudioWorkletProcessor {
     capture.copied += count;
     if (capture.copied !== capture.samples.length) return;
     this.capture = null;
-    this.port.postMessage({ passage: { chords: capture.chords, samples: capture.samples, sampleRate } }, [capture.samples.buffer]);
+    this.port.postMessage({ passage: { chords: capture.chords, groove: capture.groove, samples: capture.samples, sampleRate } }, [capture.samples.buffer]);
   }
   process(inputs, outputs) {
     const output = outputs[0];
