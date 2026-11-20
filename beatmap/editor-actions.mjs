@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './render-request.mjs?v=7';
+import { prepareBeatmap } from './render-request.mjs?v=8';
 import { compactBeatmapProject, loadBeatmapProjects } from './live-project.mjs';
 
 const controls = id => document.getElementById(id);

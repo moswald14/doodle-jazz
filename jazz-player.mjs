@@ -4,13 +4,13 @@ import { djShuffleSettings } from './jazz-settings.mjs';
 import { createJazzCastUI } from './jazz-cast.mjs';
 import { createJazzBandUI } from './jazz-band-ui.mjs?v=5';
 import { createJazzNamingUI } from './jazz-name-ui.mjs?v=4';
-import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=7';
+import { createJazzBeatmapUI } from './jazz-beatmap-ui.mjs?v=8';
 import { parseJazzDotVoice } from './jazz-dot-voices.mjs';
 import { JAZZ_DEFAULT_SETTINGS, validateJazzArrangement } from './jazz-radio-contract.mjs';
 import { chordReceipt, downloadReceipt, encodeJazzWave, loadLearnedProgressions, loadSavedGroove, readLegacyProgressions, rememberNamedProgression, savePassage, showPassages, syncPassage } from './jazz-library.mjs?v=4';
 import { connectJazzChain, jazzChainConnected } from './jazz-site.mjs?v=3';
 import { BEATMAP_BYTE_LIMIT } from './beatmap/band-beatmap.mjs';
-import { prepareBeatmap } from './beatmap/render-request.mjs?v=7';
+import { prepareBeatmap } from './beatmap/render-request.mjs?v=8';
 import { tickAt } from './core.mjs';
 
 (() => {
@@ -397,8 +397,15 @@ import { tickAt } from './core.mjs';
     naming.receive(info);
     const previouslyPlaying = lastInfo;
     lastInfo = info;
+    if (info.beat === 0 && info.rememberedGrooveId !== previouslyPlaying?.rememberedGrooveId) {
+      if (info.rememberedGrooveId) beatmap.remembered(info.beatmapName);
+      else if (!info.beatmapName) beatmap.bandPlaying();
+      paintBand();
+      naming.playbackChanged();
+    }
     if (info.beatmapFinished && (!previouslyPlaying?.beatmapFinished || previouslyPlaying.beatmapRevision !== info.beatmapRevision)) {
-      beatmap.finished(info.beatmapName, info.beatmapRevision);
+      if (info.rememberedGrooveId) beatmap.remembered(info.beatmapName, true);
+      else beatmap.finished(info.beatmapName, info.beatmapRevision);
     }
     if (!previouslyPlaying || previouslyPlaying.set !== info.set) naming.playbackChanged();
     if (chordHistory.at(-1)?.index !== info.chordIndex) {

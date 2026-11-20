@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareForBand, renderProgram, exportProgramMidi } from './render.mjs?v=7';
+import { prepareForBand, renderProgram, exportProgramMidi } from './render.mjs?v=8';
 
 self.onmessage = ({ data }) => {
   try {

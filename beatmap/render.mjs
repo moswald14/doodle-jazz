@@ -81,9 +81,13 @@ export function prepareForBand(project, program) {
   const chip = program && project.editor?.chip === true;
   const usable = synthesize(waves, bars, BEATMAP_RATE, project.drumVolume, chip);
   // Keep the editable recipe with the prepared audio so a capture can pin the audible revision.
+  const edit = project.editor;
   const recipe = compactBeatmapProject({
-    ...project, kind: 'dot-drum-machine', version: 3, pattern, program: DrumProgram.draft(project.program),
-    editor: { ...project.editor, jazzProgram: program === true }
+    kind: 'dot-drum-machine', version: 3, name: project.name, library: project.library, drumVolume: project.drumVolume,
+    pattern: { ...pattern, pads: pattern.pads ?? DrumDSP.defaultPads(pattern.bars * stepOffsets.length) },
+    program: DrumProgram.draft(project.program),
+    editor: { measure: edit?.measure ?? 0, voice: edit?.voice ?? 0, pad: edit?.pad ?? 1, follow: edit?.follow !== false,
+      chip: edit?.chip === true, jazzProgram: program === true }
   });
   return validateBandBeatmap({ name: project.name, loop: !program || project.program.loop === true, order, stepOffsets, recipe, ...usable });
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { prepareBeatmap } from './beatmap/render-request.mjs?v=7';
+import { prepareBeatmap } from './beatmap/render-request.mjs?v=8';
 import { appliedBeatmapKey, compactBeatmapProject, loadBeatmapProjects } from './beatmap/live-project.mjs';
 
 const sourceKey = 'doodle-jazz-drum-source-v1';
@@ -46,7 +46,7 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
       tellEditor('close');
     } else if (frame.hasAttribute('src')) syncEditor();
     else {
-      const editorUrl = new URL('./beatmap/index.html?v=7', import.meta.url);
+      const editorUrl = new URL('./beatmap/index.html?v=8', import.meta.url);
       if (night) editorUrl.searchParams.set('theme', 'night');
       frame.src = editorUrl.href;
     }
@@ -162,6 +162,12 @@ export function createJazzBeatmapUI({ choose, preview, isStarted }) {
     },
     playing(name, revision) {
       if (!failed && revision === generation) status(`${name} · live`);
+    },
+    remembered(name, finished = false) {
+      status(finished ? `${name} finished. The drum track is quiet.` : `${name} · saved groove`);
+    },
+    bandPlaying() {
+      if (!enabled) status('Band drums selected.');
     },
     finished(name, revision) {
       if (!failed && revision === generation) status(`${name} finished. The drum track is quiet.`);
